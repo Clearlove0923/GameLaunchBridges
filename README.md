@@ -6,9 +6,9 @@
 
 | 游戏 | 目录 | 状态 |
 |---|---|---|
-| 燕云十六声（Where Winds Meet） | [`WhereWindsMeet/`](WhereWindsMeet/) | 已实现实验性直启、运行中附着、退出延时和单文件日志保留 |
-| 无限暖暖（Infinity Nikki） | 待加入 | 后续独立实现，不复用未经验证的燕云参数 |
-| 异环（Neverness to Everness） | 待加入 | 后续独立实现，不复用未经验证的燕云参数 |
+| 燕云十六声（Where Winds Meet） | [`WhereWindsMeet/`](WhereWindsMeet/) | EXE 可用性：[`v1.0` 已发布](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/v1.0)，标准版路径已验证，极速版路径测试通过但真实启动待验证。已发现 Bug：暂无已确认 Bug。 |
+| 无限暖暖（Infinity Nikki） | — | EXE 可用性：暂无。已发现 Bug：不适用。 |
+| 异环（Neverness to Everness） | — | EXE 可用性：暂无。已发现 Bug：不适用。 |
 
 ## 仓库约定
 
