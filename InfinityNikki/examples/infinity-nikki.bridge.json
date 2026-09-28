@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "launcherRoot": "C:\\Program Files\\InfinityNikkiGlobal Launcher",
+  "executable": {
+    "relativePath": "xstarter.exe",
+    "searchVersionDirectories": true
+  },
+  "arguments": [
+    "-skiplauncher"
+  ],
+  "workingDirectory": ".",
+  "runAsAdministrator": true,
+  "watchProcessNames": [
+    "X6Game-Win64-Shipping.exe"
+  ],
+  "startupTimeoutSeconds": 180,
+  "pollIntervalMilliseconds": 1000,
+  "exitGraceSeconds": 8,
+  "refuseIfAlreadyRunning": true
+}
