@@ -1,0 +1,17 @@
+# Build output
+**/bin/
+**/obj/
+**/Release/
+**/.dotnet/
+
+# Runtime logs
+*.log
+*.tmp
+
+# IDE and OS files
+.vs/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
