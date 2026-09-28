@@ -1,0 +1,18 @@
+# 推送记录
+
+本文件按时间倒序记录每次推送实现的功能。
+
+## 2026-09-28 21:18:39 +08:00
+
+- 推送人员：`Violet0923`
+- 目标分支：`main`
+- 实现内容：
+  - 《燕云十六声》安装根目录改为通过同级 `launcher.exe` 或 `launcher.exe.lnk` 识别，不再依赖标准版 `yysls_medium` 与 `Win32\deploy` 同时存在。
+  - 本体改为从安装根目录的下一级 `yysls_*` 目录发现，支持标准版 `yysls_medium`、极速版 `yysls_fast` 和相同结构的后续目录。
+  - 新增路径发现测试，覆盖标准版、极速版、后续目录以及 EXE 同级日志文件夹。
+- 验证结果：
+  - 自包含单文件构建成功。
+  - `Test-PathDiscovery.ps1` 三项场景全部通过；本机标准版 `launcher.exe.lnk` 布局的 `--dry-run` 通过。
+  - 发布 EXE 的多尺寸图标与仓库图标一致，日志正确写入 `WhereWindsMeetLaunchBridge-log`。
+- 当前限制：
+  - 极速版真实游戏启动及 Steam 生命周期尚需用户在对应安装环境手动验证。

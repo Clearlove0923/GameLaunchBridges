@@ -8,6 +8,6 @@
     <AssemblyName>WhereWindsMeetLaunchBridge</AssemblyName>
     <RootNamespace>WhereWindsMeetLaunchBridge</RootNamespace>
     <ApplicationIcon Condition="Exists('yysls.ico')">yysls.ico</ApplicationIcon>
-    <Version>0.3.5</Version>
+    <Version>0.3.6</Version>
   </PropertyGroup>
 </Project>

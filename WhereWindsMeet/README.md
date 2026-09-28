@@ -4,8 +4,8 @@
 
 ## 功能
 
-- 从桥接器所在位置向上识别同时含有 `yysls_medium` 和 `Win32\deploy` 的安装根目录。
-- 在 `Win64r` 和 `Win64rh` 中查找 `yysls.exe`。
+- 从桥接器所在位置向上识别与 `launcher.exe` 或 `launcher.exe.lnk` 同级的安装根目录。
+- 在安装根目录的下一级 `yysls_*` 目录中查找 `Win64r` 和 `Win64rh` 的 `yysls.exe`，兼容标准版 `yysls_medium`、极速版 `yysls_fast` 以及相同结构的后续版本。
 - 游戏已经运行时附着到同一安装目录的进程，不重复启动。
 - 游戏未运行时使用本体目录作为工作目录，以 `--launch-type=launcher` 尝试启动。
 - 游戏退出后默认延迟 10 秒退出。
@@ -22,7 +22,9 @@
 
 仓库已包含当前从游戏本体提取的多尺寸 `yysls.ico`，直接运行构建脚本即可生成带图标的 EXE。`-GameExe` 可选；提供后，脚本会先从指定的本机游戏 EXE 重新提取图标，适合游戏图标更新后的维护。
 
-输出文件位于 `Release\WhereWindsMeetLaunchBridge.exe`。只需把该 EXE 放到游戏安装根目录，即与 `yysls_medium`、`Win32` 同级的位置。
+输出文件位于 `Release\WhereWindsMeetLaunchBridge.exe`。只需把该 EXE 放到游戏安装根目录，即与 `launcher.exe`（或资源管理器中显示为 `launcher.exe` 的快捷方式）同级的位置。
+
+构建后可运行 `.\tests\Test-PathDiscovery.ps1`，验证标准版、极速版和后续 `yysls_*` 目录的定位，以及日志文件夹生成。
 
 ## 参数
 

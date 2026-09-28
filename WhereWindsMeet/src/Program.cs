@@ -30,9 +30,7 @@ internal static class Program
             Log($"Options: installRoot={options.InstallRoot ?? "<exe directory>"}, dryRun={options.DryRun}, attachOnly={options.AttachOnly}, exitDelay={options.ExitDelaySeconds}s, startupTimeout={options.StartupTimeoutSeconds}s, variant={options.Variant ?? "auto"}");
             var installRoot = ResolveInstallRoot(options.InstallRoot);
             Log($"Install root: {installRoot}");
-            var gameRoot = Path.Combine(installRoot, "yysls_medium");
-            var gamePaths = Variants.Select(variant =>
-                Path.GetFullPath(Path.Combine(gameRoot, "Engine", "Binaries", variant, "yysls.exe"))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var gamePaths = FindGameExecutables(installRoot, requestedVariant: null).ToHashSet(StringComparer.OrdinalIgnoreCase);
             Log($"Tracked game paths: {string.Join("; ", gamePaths)}");
 
             if (options.DryRun)
@@ -43,7 +41,7 @@ internal static class Program
                 Console.WriteLine($"仅跟踪已启动游戏: {options.AttachOnly}");
                 if (!options.AttachOnly)
                 {
-                    var startInfo = CreateStartInfo(ResolveExecutable(gameRoot, options.Variant));
+                    var startInfo = CreateStartInfo(ResolveExecutable(installRoot, options.Variant));
                     Log($"Dry run command: {FormatCommand(startInfo)}; workingDirectory={startInfo.WorkingDirectory}");
                     Console.WriteLine($"工作目录: {startInfo.WorkingDirectory}");
                     Console.WriteLine($"启动命令: {FormatCommand(startInfo)}");
@@ -58,7 +56,7 @@ internal static class Program
 
             using var launched = observed.MatchingIds.Count > 0 || options.AttachOnly
                 ? null
-                : StartGame(CreateStartInfo(ResolveExecutable(gameRoot, options.Variant)));
+                : StartGame(CreateStartInfo(ResolveExecutable(installRoot, options.Variant)));
             if (observed.MatchingIds.Count > 0)
                 Log($"Attached to running game: pids={string.Join(',', observed.MatchingIds)}");
             else if (options.AttachOnly)
@@ -192,26 +190,58 @@ internal static class Program
         var start = Path.GetFullPath(explicitRoot ?? AppContext.BaseDirectory);
         for (var directory = new DirectoryInfo(start); directory is not null; directory = directory.Parent)
         {
-            if (Directory.Exists(Path.Combine(directory.FullName, "yysls_medium")) &&
-                Directory.Exists(Path.Combine(directory.FullName, "Win32", "deploy")))
+            if (HasLauncherMarker(directory.FullName))
                 return directory.FullName;
         }
 
         throw new DirectoryNotFoundException(
-            "请把此 EXE 放在燕云十六声安装根目录（与 yysls_medium、Win32 同级）后运行。");
+            "请把此 EXE 放在燕云十六声安装根目录（与 launcher.exe 或 launcher.exe.lnk 同级）后运行。");
     }
 
-    private static string ResolveExecutable(string gameRoot, string? requestedVariant)
+    private static bool HasLauncherMarker(string directory)
+    {
+        return File.Exists(Path.Combine(directory, "launcher.exe")) ||
+               File.Exists(Path.Combine(directory, "launcher.exe.lnk"));
+    }
+
+    private static IReadOnlyList<string> FindGameExecutables(string installRoot, string? requestedVariant)
     {
         var variants = requestedVariant is null ? Variants : [requestedVariant];
-        foreach (var variant in variants)
+        var gameDirectories = Directory.EnumerateDirectories(installRoot, "yysls_*", SearchOption.TopDirectoryOnly)
+            .OrderBy(GetGameDirectoryPriority)
+            .ThenBy(path => path, StringComparer.OrdinalIgnoreCase);
+        var executables = new List<string>();
+        foreach (var gameDirectory in gameDirectories)
         {
-            var regular = Path.Combine(gameRoot, "Engine", "Binaries", variant, "yysls.exe");
-            if (File.Exists(regular)) return regular;
+            foreach (var variant in variants)
+            {
+                var executable = Path.Combine(gameDirectory, "Engine", "Binaries", variant, "yysls.exe");
+                if (File.Exists(executable))
+                    executables.Add(Path.GetFullPath(executable));
+            }
         }
 
+        return executables;
+    }
+
+    private static int GetGameDirectoryPriority(string path)
+    {
+        return Path.GetFileName(path).ToLowerInvariant() switch
+        {
+            "yysls_medium" => 0,
+            "yysls_fast" => 1,
+            _ => 2,
+        };
+    }
+
+    private static string ResolveExecutable(string installRoot, string? requestedVariant)
+    {
+        var executable = FindGameExecutables(installRoot, requestedVariant).FirstOrDefault();
+        if (executable is not null)
+            return executable;
+
         throw new FileNotFoundException(
-            "在 yysls_medium\\Engine\\Binaries 中找不到游戏本体。请先通过官方启动器完成更新和资源准备。");
+            "在安装根目录下一级的 yysls_* 游戏目录中找不到本体。请先通过官方启动器完成更新和资源准备。");
     }
 
     private static ProcessStartInfo CreateStartInfo(string executable)
