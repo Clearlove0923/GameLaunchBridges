@@ -2,6 +2,8 @@
 
 `WhereWindsMeetLaunchBridge.exe` 用于启动或附着到当前安装目录中的《燕云十六声》游戏本体，并在游戏退出后延迟结束自身。它适合由 Steam 等外部程序启动并跟踪桥接器的生命周期。仓库后续桥接程序统一采用“英文游戏名 + `LaunchBridge`”的文件名。
 
+当前正式版本：`v1.0`。
+
 ## 功能
 
 - 从桥接器所在位置向上识别与 `launcher.exe` 或 `launcher.exe.lnk` 同级的安装根目录。
