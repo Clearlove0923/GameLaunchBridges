@@ -16,7 +16,7 @@
   - `InfinityNikkiLaunchBridge.exe`
   - `NevernessToEvernessLaunchBridge.exe`
 - GitHub Release 使用 `v` 前缀标签，例如 `v1.0`。
-- Release 附件名必须包含版本与平台，例如 `WhereWindsMeetLaunchBridge-v1.0-win-x64.exe`。
+- Release 附件名使用“EXE 名称 + 下划线 + 版本”，不再附加平台，例如 `WhereWindsMeetLaunchBridge_v1.0.exe`。
 - 项目版本、Release 标签、README 当前版本和附件名必须一致。
 
 ## 部署与图标
