@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 
 namespace WhereWindsMeetLaunchBridge;
 
@@ -9,7 +10,10 @@ internal static class Program
 {
     private const string Title = "燕云十六声直启实验";
     private const string ApplicationName = "WhereWindsMeetLaunchBridge";
-    private static readonly string[] Variants = ["Win64r", "Win64rh"];
+    private static readonly string[] DefaultExecutableNames = ["yysls.exe"];
+    private static readonly string[] DefaultExcludedDirectoryNames =
+        ["Patch", "BinPatch", "Backup", "Backups", "Download", "Downloads", "Temp", "Tmp", "Cache", "Caches"];
+    private static readonly string[] DefaultPreferredPathKeywords = ["Win64r", "Win64rh"];
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
     private static readonly object LogSync = new();
     private static readonly string SessionId = Guid.NewGuid().ToString("N")[..8];
@@ -28,10 +32,16 @@ internal static class Program
             var options = Options.Parse(args);
             _noDialog = options.NoDialog;
             Log($"Options: installRoot={options.InstallRoot ?? "<exe directory>"}, dryRun={options.DryRun}, attachOnly={options.AttachOnly}, exitDelay={options.ExitDelaySeconds}s, startupTimeout={options.StartupTimeoutSeconds}s, variant={options.Variant ?? "auto"}");
+            var configuration = BridgeConfiguration.Load(ConfigPath);
+            Log($"Configuration: path={ConfigPath}, exists={File.Exists(ConfigPath)}, executableNames={string.Join(',', configuration.ExecutableNames)}, launchArguments={configuration.LaunchArguments}, maxSearchDepth={configuration.MaxSearchDepth}, excludedDirectories={string.Join(',', configuration.ExcludedDirectoryNames)}, preferredPathKeywords={string.Join(',', configuration.PreferredPathKeywords)}");
             var installRoot = ResolveInstallRoot(options.InstallRoot);
             Log($"Install root: {installRoot}");
-            var gamePaths = FindGameExecutables(installRoot, requestedVariant: null).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var gamePaths = FindGameExecutables(installRoot, configuration, requestedVariant: null).ToHashSet(StringComparer.OrdinalIgnoreCase);
             Log($"Tracked game paths: {string.Join("; ", gamePaths)}");
+            foreach (var gamePath in gamePaths)
+                LogExecutableDetails("Candidate", gamePath);
+            if (gamePaths.Count == 0)
+                throw CreateGameNotFoundException(configuration);
 
             if (options.DryRun)
             {
@@ -41,7 +51,7 @@ internal static class Program
                 Console.WriteLine($"仅跟踪已启动游戏: {options.AttachOnly}");
                 if (!options.AttachOnly)
                 {
-                    var startInfo = CreateStartInfo(ResolveExecutable(installRoot, options.Variant));
+                    var startInfo = CreateStartInfo(ResolveExecutable(installRoot, configuration, options.Variant), configuration.LaunchArguments);
                     Log($"Dry run command: {FormatCommand(startInfo)}; workingDirectory={startInfo.WorkingDirectory}");
                     Console.WriteLine($"工作目录: {startInfo.WorkingDirectory}");
                     Console.WriteLine($"启动命令: {FormatCommand(startInfo)}");
@@ -56,7 +66,7 @@ internal static class Program
 
             using var launched = observed.MatchingIds.Count > 0 || options.AttachOnly
                 ? null
-                : StartGame(CreateStartInfo(ResolveExecutable(installRoot, options.Variant)));
+                : StartGame(CreateStartInfo(ResolveExecutable(installRoot, configuration, options.Variant), configuration.LaunchArguments));
             if (observed.MatchingIds.Count > 0)
                 Log($"Attached to running game: pids={string.Join(',', observed.MatchingIds)}");
             else if (options.AttachOnly)
@@ -144,22 +154,28 @@ internal static class Program
     {
         var matchingIds = new List<int>();
         var unreadableCount = 0;
-        foreach (var process in Process.GetProcessesByName("yysls"))
+        var processNames = expectedPaths.Select(Path.GetFileNameWithoutExtension)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var processName in processNames)
         {
-            using (process)
+            foreach (var process in Process.GetProcessesByName(processName))
             {
-                if (process.HasExited)
-                    continue;
-
-                var path = TryGetProcessPath(process.Id);
-                if (path is null)
+                using (process)
                 {
-                    unreadableCount++;
-                    continue;
-                }
+                    if (process.HasExited)
+                        continue;
 
-                if (expectedPaths.Contains(Path.GetFullPath(path)))
-                    matchingIds.Add(process.Id);
+                    var path = TryGetProcessPath(process.Id);
+                    if (path is null)
+                    {
+                        unreadableCount++;
+                        continue;
+                    }
+
+                    if (expectedPaths.Contains(Path.GetFullPath(path)))
+                        matchingIds.Add(process.Id);
+                }
             }
         }
 
@@ -187,64 +203,120 @@ internal static class Program
 
     private static string ResolveInstallRoot(string? explicitRoot)
     {
-        var start = Path.GetFullPath(explicitRoot ?? AppContext.BaseDirectory);
-        for (var directory = new DirectoryInfo(start); directory is not null; directory = directory.Parent)
-        {
-            if (HasLauncherMarker(directory.FullName))
-                return directory.FullName;
-        }
+        var root = Path.GetFullPath(explicitRoot ?? AppContext.BaseDirectory);
+        if (Directory.Exists(root))
+            return root;
 
         throw new DirectoryNotFoundException(
-            "请把此 EXE 放在燕云十六声安装根目录（与 launcher.exe 或 launcher.exe.lnk 同级）后运行。");
+            $"游戏安装目录不存在：{root}");
     }
 
-    private static bool HasLauncherMarker(string directory)
+    private static IReadOnlyList<string> FindGameExecutables(
+        string installRoot,
+        BridgeConfiguration configuration,
+        string? requestedVariant)
     {
-        return File.Exists(Path.Combine(directory, "launcher.exe")) ||
-               File.Exists(Path.Combine(directory, "launcher.exe.lnk"));
-    }
-
-    private static IReadOnlyList<string> FindGameExecutables(string installRoot, string? requestedVariant)
-    {
-        var variants = requestedVariant is null ? Variants : [requestedVariant];
-        var gameDirectories = Directory.EnumerateDirectories(installRoot, "yysls_*", SearchOption.TopDirectoryOnly)
-            .OrderBy(GetGameDirectoryPriority)
-            .ThenBy(path => path, StringComparer.OrdinalIgnoreCase);
         var executables = new List<string>();
-        foreach (var gameDirectory in gameDirectories)
+        var pending = new Stack<(string Path, int Depth)>();
+        pending.Push((installRoot, 0));
+        while (pending.Count > 0)
         {
-            foreach (var variant in variants)
+            var current = pending.Pop();
+            foreach (var executableName in configuration.ExecutableNames)
             {
-                var executable = Path.Combine(gameDirectory, "Engine", "Binaries", variant, "yysls.exe");
-                if (File.Exists(executable))
-                    executables.Add(Path.GetFullPath(executable));
+                var candidate = Path.Combine(current.Path, executableName);
+                if (File.Exists(candidate) &&
+                    (requestedVariant is null || HasPathSegment(candidate, requestedVariant)))
+                    executables.Add(Path.GetFullPath(candidate));
+            }
+
+            if (current.Depth >= configuration.MaxSearchDepth)
+                continue;
+
+            string[] childDirectories;
+            try { childDirectories = Directory.GetDirectories(current.Path); }
+            catch (IOException) { continue; }
+            catch (UnauthorizedAccessException) { continue; }
+
+            foreach (var childDirectory in childDirectories)
+            {
+                FileAttributes attributes;
+                try { attributes = File.GetAttributes(childDirectory); }
+                catch (IOException) { continue; }
+                catch (UnauthorizedAccessException) { continue; }
+
+                var directoryName = Path.GetFileName(childDirectory);
+                if ((attributes & FileAttributes.ReparsePoint) != 0 ||
+                    configuration.ExcludedDirectoryNames.Contains(directoryName, StringComparer.OrdinalIgnoreCase) ||
+                    directoryName.Equals($"{ApplicationName}-log", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                pending.Push((childDirectory, current.Depth + 1));
             }
         }
 
-        return executables;
+        return executables.Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => GetCandidateScore(path, installRoot, configuration))
+            .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
-    private static int GetGameDirectoryPriority(string path)
+    private static bool HasPathSegment(string path, string expectedSegment)
     {
-        return Path.GetFileName(path).ToLowerInvariant() switch
+        return path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(segment => segment.Equals(expectedSegment, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static int GetCandidateScore(
+        string path,
+        string installRoot,
+        BridgeConfiguration configuration)
+    {
+        var relativePath = Path.GetRelativePath(installRoot, path);
+        var segments = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var score = segments.Length * 10;
+        var executableNameIndex = Array.FindIndex(configuration.ExecutableNames,
+            name => name.Equals(Path.GetFileName(path), StringComparison.OrdinalIgnoreCase));
+        if (executableNameIndex >= 0)
+            score += executableNameIndex * 100;
+
+        for (var i = 0; i < configuration.PreferredPathKeywords.Length; i++)
         {
-            "yysls_medium" => 0,
-            "yysls_fast" => 1,
-            _ => 2,
-        };
+            if (segments.Any(segment => segment.Equals(
+                    configuration.PreferredPathKeywords[i], StringComparison.OrdinalIgnoreCase)))
+            {
+                score -= 1000 - i * 10;
+                break;
+            }
+        }
+
+        return score;
     }
 
-    private static string ResolveExecutable(string installRoot, string? requestedVariant)
+    private static string ResolveExecutable(
+        string installRoot,
+        BridgeConfiguration configuration,
+        string? requestedVariant)
     {
-        var executable = FindGameExecutables(installRoot, requestedVariant).FirstOrDefault();
+        var executable = FindGameExecutables(installRoot, configuration, requestedVariant).FirstOrDefault();
         if (executable is not null)
+        {
+            LogExecutableDetails("Selected", executable);
             return executable;
+        }
 
         throw new FileNotFoundException(
-            "在安装根目录下一级的 yysls_* 游戏目录中找不到本体。请先通过官方启动器完成更新和资源准备。");
+            CreateGameNotFoundException(configuration).Message);
     }
 
-    private static ProcessStartInfo CreateStartInfo(string executable)
+    private static FileNotFoundException CreateGameNotFoundException(BridgeConfiguration configuration)
+    {
+        return new FileNotFoundException(
+            $"在安装范围内找不到游戏本体。已搜索名称：{string.Join(", ", configuration.ExecutableNames)}。" +
+            $"如果游戏更新后修改了本体名称，请编辑 {ConfigPath}。");
+    }
+
+    private static ProcessStartInfo CreateStartInfo(string executable, string launchArguments)
     {
         var startInfo = new ProcessStartInfo(executable)
         {
@@ -253,9 +325,19 @@ internal static class Program
             Verb = "runas",
         };
 
-        // Captured from an official launcher-created yysls.exe process on 2026-09-26.
-        startInfo.Arguments = "--launch-type=launcher";
+        startInfo.Arguments = launchArguments;
         return startInfo;
+    }
+
+    private static void LogExecutableDetails(string role, string path)
+    {
+        try
+        {
+            var file = new FileInfo(path);
+            Log($"{role} executable: path={file.FullName}, size={file.Length}, lastWriteUtc={file.LastWriteTimeUtc:O}");
+        }
+        catch (IOException ex) { LogError($"Could not inspect executable {path}: {ex}"); }
+        catch (UnauthorizedAccessException ex) { LogError($"Could not inspect executable {path}: {ex}"); }
     }
 
     private static string FormatCommand(ProcessStartInfo info)
@@ -292,6 +374,8 @@ internal static class Program
     private static string LogDirectoryPath => Path.Combine(AppContext.BaseDirectory, $"{ApplicationName}-log");
 
     private static string LogPath => Path.Combine(LogDirectoryPath, "where-winds-meet-launch-bridge.log");
+
+    private static string ConfigPath => Path.Combine(AppContext.BaseDirectory, $"{ApplicationName}.json");
 
     private static void PruneOldLogEntries()
     {
@@ -395,6 +479,80 @@ internal static class Program
 
     private sealed record GameProcesses(List<int> MatchingIds, int UnreadableCount);
 
+    private sealed record BridgeConfiguration(
+        string[] ExecutableNames,
+        string LaunchArguments,
+        string[] ExcludedDirectoryNames,
+        string[] PreferredPathKeywords,
+        int MaxSearchDepth)
+    {
+        public static BridgeConfiguration Load(string path)
+        {
+            if (!File.Exists(path))
+                return CreateDefault();
+
+            var json = File.ReadAllText(path, Encoding.UTF8);
+            var document = JsonSerializer.Deserialize<BridgeConfigurationDocument>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                ?? throw new InvalidDataException($"配置文件为空：{path}");
+            var executableNames = NormalizeExecutableNames(document.ExecutableNames);
+            var excludedDirectories = NormalizeValues(
+                document.ExcludedDirectoryNames, DefaultExcludedDirectoryNames, allowEmpty: true);
+            var preferredKeywords = NormalizeValues(
+                document.PreferredPathKeywords, DefaultPreferredPathKeywords, allowEmpty: true);
+            var maxSearchDepth = document.MaxSearchDepth ?? 12;
+            if (maxSearchDepth is < 1 or > 32)
+                throw new InvalidDataException("maxSearchDepth 必须为 1 到 32 之间的整数。");
+
+            return new BridgeConfiguration(
+                executableNames,
+                document.LaunchArguments ?? "--launch-type=launcher",
+                excludedDirectories,
+                preferredKeywords,
+                maxSearchDepth);
+        }
+
+        private static BridgeConfiguration CreateDefault()
+        {
+            return new BridgeConfiguration(
+                DefaultExecutableNames,
+                "--launch-type=launcher",
+                DefaultExcludedDirectoryNames,
+                DefaultPreferredPathKeywords,
+                12);
+        }
+
+        private static string[] NormalizeExecutableNames(string[]? values)
+        {
+            var result = NormalizeValues(values, DefaultExecutableNames, allowEmpty: false);
+            foreach (var value in result)
+            {
+                if (!value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                    value.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0)
+                    throw new InvalidDataException($"executableNames 只能包含不带路径的 EXE 文件名：{value}");
+            }
+
+            return result;
+        }
+
+        private static string[] NormalizeValues(string[]? values, string[] defaults, bool allowEmpty)
+        {
+            var result = (values is null ? defaults : values)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return result.Length == 0 && !allowEmpty ? defaults : result;
+        }
+    }
+
+    private sealed record BridgeConfigurationDocument(
+        string[]? ExecutableNames,
+        string? LaunchArguments,
+        string[]? ExcludedDirectoryNames,
+        string[]? PreferredPathKeywords,
+        int? MaxSearchDepth);
+
     private sealed record Options(string? InstallRoot, string? Variant, bool DryRun, bool NoDialog,
         bool AttachOnly, int ExitDelaySeconds, int StartupTimeoutSeconds)
     {
@@ -416,8 +574,9 @@ internal static class Program
                         break;
                     case "--variant" when i + 1 < args.Length:
                         variant = args[++i];
-                        if (!Variants.Contains(variant, StringComparer.OrdinalIgnoreCase))
-                            throw new ArgumentException("--variant 只能是 Win64r 或 Win64rh。");
+                        if (string.IsNullOrWhiteSpace(variant) || variant.Length > 64 ||
+                            variant.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0)
+                            throw new ArgumentException("--variant 必须是不带路径分隔符的目录关键字，长度不超过 64 个字符。");
                         break;
                     case "--dry-run":
                         dryRun = true;

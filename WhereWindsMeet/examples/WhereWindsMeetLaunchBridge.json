@@ -1,0 +1,23 @@
+{
+  "executableNames": [
+    "yysls.exe"
+  ],
+  "launchArguments": "--launch-type=launcher",
+  "excludedDirectoryNames": [
+    "Patch",
+    "BinPatch",
+    "Backup",
+    "Backups",
+    "Download",
+    "Downloads",
+    "Temp",
+    "Tmp",
+    "Cache",
+    "Caches"
+  ],
+  "preferredPathKeywords": [
+    "Win64r",
+    "Win64rh"
+  ],
+  "maxSearchDepth": 12
+}

@@ -2,6 +2,7 @@
 **/bin/
 **/obj/
 **/Release/
+**/Capture/
 **/.dotnet/
 
 # Runtime logs
