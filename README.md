@@ -11,5 +11,5 @@
 | 无限暖暖（Infinity Nikki） | [`InfinityNikki/`](InfinityNikki/) | EXE 可用性：[`v1.0` 已发布](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/InfinityNikki-v1.0)，官方 `xstarter.exe -skiplauncher` 启动链与游戏进程检测已验证。已发现 Bug：暂无已确认 Bug。 |
 | 异环（Neverness to Everness） | — | EXE 可用性：暂无。已发现 Bug：不适用。 |
 
-## 仓库约定
+## 特别说明
 本仓库中的桥接器不是游戏官方组件，不修改或绕过游戏文件、登录系统或反作弊机制。游戏更新可能改变启动链，使用前请先通过官方启动器完成更新并确认游戏可正常运行。
