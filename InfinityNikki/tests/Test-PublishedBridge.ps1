@@ -17,7 +17,7 @@ try {
     $caseBridge = Join-Path $testRoot 'InfinityNikkiLaunchBridge.exe'
     [IO.File]::Copy($resolvedBridge, $caseBridge)
 
-    $process = [Diagnostics.Process]::Start($caseBridge, '--validate')
+    $process = [Diagnostics.Process]::Start($caseBridge, '--validate --dx11')
     $process.WaitForExit()
     if ($process.ExitCode -ne 0) {
         throw "Published bridge validation failed with exit code $($process.ExitCode)."
@@ -30,9 +30,11 @@ try {
 
     $log = [IO.File]::ReadAllText($logPath)
     foreach ($expected in @(
-        'version=1.0.0.0',
+        'version=1.1.0.0',
         'processArchitecture=X64',
         'starter=',
+        'graphicsApi=DirectX11',
+        'arguments=-skiplauncher -dx11',
         'X6Game-Win64-Shipping.exe',
         '[Event=validation.success]',
         'exitCode=0'
@@ -42,7 +44,7 @@ try {
         }
     }
 
-    Write-Output 'PASS published bridge: discovery, exact game path, version, architecture, log path, and validation exit code'
+    Write-Output 'PASS published bridge: discovery, DX11 forwarding, exact game path, version, architecture, log path, and validation exit code'
 }
 finally {
     if ([IO.Directory]::Exists($testRoot)) {

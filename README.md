@@ -8,7 +8,7 @@
 | 游戏 | 目录 | 状态 |
 |---|---|---|
 | 燕云十六声（Where Winds Meet） | [`WhereWindsMeet/`](WhereWindsMeet/) | EXE 可用性：[`v1.0` 已发布](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/v1.0)，标准版路径已验证，极速版路径测试通过但真实启动待验证。已发现 Bug：暂无已确认 Bug。 |
-| 无限暖暖（Infinity Nikki） | [`InfinityNikki/`](InfinityNikki/) | EXE 可用性：[`v1.0` 已发布](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/InfinityNikki-v1.0)，官方 `xstarter.exe -skiplauncher` 启动链与游戏进程检测已验证。已发现 Bug：暂无已确认 Bug。 |
+| 无限暖暖（Infinity Nikki） | [`InfinityNikki/`](InfinityNikki/) | EXE 可用性：[`v1.1` 已发布](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/InfinityNikki-v1.1)，支持默认、DX11、DX12 三种图形接口模式；官方 `xstarter.exe -skiplauncher` 启动链与游戏进程检测已验证。已发现 Bug：暂无已确认 Bug。 |
 | 异环（Neverness to Everness） | — | EXE 可用性：暂无。已发现 Bug：不适用。 |
 
 ## 特别说明

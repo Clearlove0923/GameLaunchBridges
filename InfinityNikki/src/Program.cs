@@ -21,11 +21,13 @@ public static class Program
             var commandLine = CommandLine.Parse(args);
             logger.Info(
                 "command.parsed",
-                $"autoDiscover={commandLine.AutoDiscover}；validateOnly={commandLine.ValidateOnly}；configurationPath={commandLine.ConfigurationPath ?? "<none>"}");
+                $"autoDiscover={commandLine.AutoDiscover}；validateOnly={commandLine.ValidateOnly}；graphicsApi={commandLine.GraphicsApi}；"
+                + $"configurationPath={commandLine.ConfigurationPath ?? "<none>"}");
             var resolved = commandLine.AutoDiscover
                 ? InfinityNikkiAutoDiscovery.Discover(AppContext.BaseDirectory, logger: logger)
                 : BridgeConfigurationResolver.Resolve(
                     BridgeConfigurationLoader.Load(commandLine.ConfigurationPath!));
+            resolved = GraphicsApiOverride.Apply(resolved, commandLine.GraphicsApi);
             logger.Info(
                 "configuration.resolved",
                 $"mode={(commandLine.AutoDiscover ? "auto" : "config")}；source={resolved.SourcePath}；launcherRoot={resolved.LauncherRoot}；"

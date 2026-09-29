@@ -78,12 +78,28 @@ try
     ]);
     Check(parsed.ConfigurationPath == configurationPath,
         "Steam-expanded trailing command tokens should be ignored");
+    Check(parsed.GraphicsApi == GraphicsApi.Default,
+        "renderer should remain automatic when no renderer option is supplied");
 
     var autoParsed = CommandLine.Parse([
         "--auto", "C:\\SteamLibrary\\placeholder.exe", "-some-original-argument"
     ]);
     Check(autoParsed.AutoDiscover && autoParsed.ConfigurationPath is null,
         "auto mode should ignore Steam-expanded trailing command tokens");
+
+    var dx11Parsed = CommandLine.Parse([
+        "--auto", "--dx11", "C:\\SteamLibrary\\placeholder.exe", "--dx12"
+    ]);
+    Check(dx11Parsed.GraphicsApi == GraphicsApi.DirectX11,
+        "DX11 should be selected while renderer-like Steam tail tokens remain ignored");
+
+    var dx12Parsed = CommandLine.Parse(["--d3d12"]);
+    Check(dx12Parsed.AutoDiscover && dx12Parsed.GraphicsApi == GraphicsApi.DirectX12,
+        "D3D12 alias should select DX12 and retain zero-configuration discovery");
+
+    ExpectConfigurationError(
+        () => CommandLine.Parse(["--dx11", "--dx12"]),
+        "conflicting renderer options must be rejected");
 
     var emptyParsed = CommandLine.Parse([]);
     Check(emptyParsed.AutoDiscover && emptyParsed.ConfigurationPath is null,
@@ -126,6 +142,18 @@ try
     Check(Path.GetDirectoryName(resolvedConfiguration.LogPath)!.EndsWith(
         "InfinityNikkiLaunchBridge-log", StringComparison.Ordinal),
         "logger should use the repository-standard sibling log directory");
+
+    var dx11Configuration = GraphicsApiOverride.Apply(
+        resolvedConfiguration with { Arguments = ["-skiplauncher", "-d3d12", "-custom"] },
+        GraphicsApi.DirectX11);
+    Check(dx11Configuration.Arguments.SequenceEqual(["-skiplauncher", "-custom", "-dx11"]),
+        "DX11 override should replace any configured renderer flag and preserve other arguments");
+
+    var dx12Configuration = GraphicsApiOverride.Apply(
+        resolvedConfiguration with { Arguments = ["-skiplauncher", "-dx11"] },
+        GraphicsApi.DirectX12);
+    Check(dx12Configuration.Arguments.SequenceEqual(["-skiplauncher", "-dx12"]),
+        "DX12 override should replace a DX11 flag instead of combining renderer modes");
 
     var retentionLog = Path.Combine(temporaryRoot, "retention-test.log");
     var oldTimestamp = DateTimeOffset.Now.AddDays(-8).ToString("yyyy-MM-dd HH:mm:ss.fff zzz");

@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>InfinityNikki.LaunchBridge</RootNamespace>
     <AssemblyName>InfinityNikkiLaunchBridge</AssemblyName>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Product>InfinityNikkiLaunchBridge</Product>
     <Description>Launches Infinity Nikki through xstarter and keeps Steam's Playing state active while the game is running.</Description>
     <ApplicationIcon Condition="Exists('InfinityNikki.ico')">InfinityNikki.ico</ApplicationIcon>
