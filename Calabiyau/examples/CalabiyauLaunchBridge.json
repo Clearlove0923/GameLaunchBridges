@@ -1,0 +1,18 @@
+{
+  "launcherExecutableNames": ["CalabiYau.exe"],
+  "launcherRelativePaths": ["Calabiyau\\CalabiyauGame\\Calabiyau.exe"],
+  "sdkLauncherExecutableNames": ["CalabiYau.exe"],
+  "sdkLauncherRelativePaths": ["CalabiYau.exe"],
+  "sdkInitializationDelaySeconds": 12,
+  "minimizeSdkLauncherToTray": true,
+  "gameExecutableNames": ["Calabiyau-Win64-Shipping.exe"],
+  "launcherArguments": null,
+  "excludedDirectoryNames": ["CalabiyauLaunchBridge-log", "UpdateGUI", "Cache", "CrashSightLog", "GCloudSDKLog", "WebView2RT"],
+  "preferredLauncherPathKeywords": ["CalabiyauGame", "Calabiyau"],
+  "preferredGamePathKeywords": ["PM", "Binaries", "Win64"],
+  "maxSearchDepth": 12,
+  "startupTimeoutSeconds": 180,
+  "pollIntervalMilliseconds": 1000,
+  "exitDelaySeconds": 3,
+  "runAsAdministrator": false
+}
