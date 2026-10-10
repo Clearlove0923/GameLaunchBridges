@@ -556,7 +556,7 @@ public static class OfficialLaunchRecordResolver
 
     private static bool IsExpectedArgumentSet(IReadOnlyList<string> arguments)
     {
-        if (arguments.Count is < 3 or > 8) return false;
+        if (arguments.Count is < 1 or > 8) return false;
         var hasChannel = false;
         var hasLaunch = false;
         var hasAdsPath = false;
@@ -568,7 +568,11 @@ public static class OfficialLaunchRecordResolver
             else if (!argument.Equals("-dx11", StringComparison.OrdinalIgnoreCase)
                      && !argument.Equals("-dx12", StringComparison.OrdinalIgnoreCase)) return false;
         }
-        return hasChannel && hasLaunch && hasAdsPath;
+        // The standard launcher supplies the login-source and ads-path pair,
+        // while the Tencent launcher keeps that context in its background SDK
+        // process and records only -Channel plus an optional renderer switch.
+        // Accept either complete shape, but never a partial standard-only pair.
+        return hasChannel && hasLaunch == hasAdsPath;
     }
 
     private static bool IsWithinRoot(string path, string root)

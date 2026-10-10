@@ -18,12 +18,16 @@ void ExpectBridgeError(Action action, string message)
     catch (BridgeException) { checks++; }
 }
 
-void WriteOfficialLaunchLog(string installRoot, string wrapperPath, params string[] launchArguments)
+void WriteOfficialLaunchLog(
+    string installRoot,
+    string wrapperPath,
+    string argumentSeparator = ", ",
+    params string[] launchArguments)
 {
     Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     var logDirectory = Path.Combine(installRoot, "log");
     Directory.CreateDirectory(logDirectory);
-    var renderedArguments = string.Join(", ", launchArguments.Select(argument => $"\"{argument}\""));
+    var renderedArguments = string.Join(argumentSeparator, launchArguments.Select(argument => $"\"{argument}\""));
     var line = $"10-10 12:00:00.000: Debug/(0): start game: \"{wrapperPath.Replace('\\', '/')}\"  args: ({renderedArguments})";
     File.WriteAllText(Path.Combine(logDirectory, "launcher.log"), line, Encoding.GetEncoding(936));
 }
@@ -42,7 +46,7 @@ try
     File.WriteAllText(Path.Combine(standard, "config.ini"), "GamePath=Calabiyau/CalabiyauGame");
     File.WriteAllText(standardWrapper, "wrapper");
     File.WriteAllText(standardGame, "game");
-    WriteOfficialLaunchLog(standard, standardWrapper,
+    WriteOfficialLaunchLog(standard, standardWrapper, ", ",
         "-Channel=channel=PCCNGF80001", "-dx12", "-Lanuch=IdsCn", "-AdsPath=fixture");
 
     var options = CommandLineOptions.Parse(["--install-root", standard, "C:\\Steam\\original.exe", "-ignored"]);
@@ -76,8 +80,8 @@ try
     File.WriteAllText(Path.Combine(tencent, "Tenprotect", "TASLogin64.exe"), "login");
     File.WriteAllText(tencentWrapper, "wrapper");
     File.WriteAllText(tencentGame, "game");
-    WriteOfficialLaunchLog(tencent, tencentWrapper,
-        "-Channel=channel=TENCENT", "-dx11", "-Lanuch=IdsCn", "-AdsPath=fixture");
+    WriteOfficialLaunchLog(tencent, tencentWrapper, " ",
+        "-Channel=channel=TENCENT", "-dx11");
     var tencentResolved = BridgeDiscovery.Resolve(
         CommandLineOptions.Parse(["--install-root", tencent]), tencent);
     Check(tencentResolved.LauncherPath.Equals(tencentWrapper, StringComparison.OrdinalIgnoreCase),
@@ -86,6 +90,9 @@ try
         "Tencent layout should select its own root launcher for SDK initialization");
     Check(tencentResolved.GameExecutablePaths.SequenceEqual([tencentGame], StringComparer.OrdinalIgnoreCase),
         "Tencent layout should find the known game structure without depending on Tenprotect");
+    Check(tencentResolved.LauncherArguments.SequenceEqual(
+            ["-Channel=channel=TENCENT", "-dx11"]),
+        "Tencent layout should accept the official channel-only launch record");
 
     var custom = Path.Combine(root, "custom");
     var customSdkLauncher = Path.Combine(custom, "SdkLauncher.exe");

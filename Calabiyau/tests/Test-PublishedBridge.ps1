@@ -29,7 +29,7 @@ try {
     if (-not [IO.File]::Exists($logPath)) { throw "Published bridge did not create the expected log: $logPath" }
     $log = [IO.File]::ReadAllText($logPath)
     foreach ($expected in @(
-        'version=1.0.0.0',
+        'version=1.1.0.0',
         'processArchitecture=X64',
         'CalabiYau.exe',
         'launch_record.selected',
