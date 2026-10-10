@@ -11,12 +11,15 @@ function New-EmptyFile([string] $Path) {
     [IO.File]::WriteAllBytes($Path, [byte[]]::new(0))
 }
 
-function Invoke-DryRun([string] $CaseRoot) {
+function Invoke-DryRun([string] $CaseRoot, [string[]] $ExtraArguments = @()) {
     $caseBridge = Join-Path $CaseRoot 'WhereWindsMeetLaunchBridge.exe'
     [IO.File]::Copy($resolvedBridge, $caseBridge)
     $startInfo = [Diagnostics.ProcessStartInfo]::new($caseBridge)
     $startInfo.ArgumentList.Add('--dry-run')
     $startInfo.ArgumentList.Add('--no-dialog')
+    foreach ($argument in $ExtraArguments) {
+        $startInfo.ArgumentList.Add($argument)
+    }
     $startInfo.UseShellExecute = $false
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
@@ -98,6 +101,20 @@ try {
         throw "renamed did not apply configured launch arguments: $($renamedResult.StandardOutput)"
     }
     Write-Output 'PASS renamed: configurable executable name and launch arguments'
+
+    $steamCommandRoot = Join-Path $testRoot 'steam-command-tail'
+    New-EmptyFile (Join-Path $steamCommandRoot 'Live\yysls.exe')
+    $steamCommandResult = Invoke-DryRun $steamCommandRoot @(
+        'D:\STEAM\steamapps\common\Where Winds Meet\Engine\Binaries\Win64r\wwm.exe',
+        '--install-root',
+        'C:\SteamTailMustNotOverrideBridgeOptions')
+    Assert-Success 'steam-command-tail' $steamCommandResult 'Live\yysls.exe'
+    $steamCommandLog = [IO.File]::ReadAllText(
+        (Join-Path $steamCommandRoot 'WhereWindsMeetLaunchBridge-log\where-winds-meet-launch-bridge.log'))
+    if (-not $steamCommandLog.Contains('steamCommandTailIgnored=True', [StringComparison]::Ordinal)) {
+        throw "steam-command-tail was not recorded as ignored: $steamCommandLog"
+    }
+    Write-Output 'PASS steam-command-tail: Steam-expanded original command ignored'
 
     $retentionRoot = Join-Path $testRoot 'retention'
     New-EmptyFile (Join-Path $retentionRoot 'Live\yysls.exe')

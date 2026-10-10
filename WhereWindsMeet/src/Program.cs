@@ -31,7 +31,7 @@ internal static class Program
 
             var options = Options.Parse(args);
             _noDialog = options.NoDialog;
-            Log($"Options: installRoot={options.InstallRoot ?? "<exe directory>"}, dryRun={options.DryRun}, attachOnly={options.AttachOnly}, exitDelay={options.ExitDelaySeconds}s, startupTimeout={options.StartupTimeoutSeconds}s, variant={options.Variant ?? "auto"}");
+            Log($"Options: installRoot={options.InstallRoot ?? "<exe directory>"}, dryRun={options.DryRun}, attachOnly={options.AttachOnly}, exitDelay={options.ExitDelaySeconds}s, startupTimeout={options.StartupTimeoutSeconds}s, variant={options.Variant ?? "auto"}, steamCommandTailIgnored={options.SteamCommandTailIgnored}");
             var configuration = BridgeConfiguration.Load(ConfigPath);
             Log($"Configuration: path={ConfigPath}, exists={File.Exists(ConfigPath)}, executableNames={string.Join(',', configuration.ExecutableNames)}, launchArguments={configuration.LaunchArguments}, maxSearchDepth={configuration.MaxSearchDepth}, excludedDirectories={string.Join(',', configuration.ExcludedDirectoryNames)}, preferredPathKeywords={string.Join(',', configuration.PreferredPathKeywords)}");
             var installRoot = ResolveInstallRoot(options.InstallRoot);
@@ -554,7 +554,7 @@ internal static class Program
         int? MaxSearchDepth);
 
     private sealed record Options(string? InstallRoot, string? Variant, bool DryRun, bool NoDialog,
-        bool AttachOnly, int ExitDelaySeconds, int StartupTimeoutSeconds)
+        bool AttachOnly, int ExitDelaySeconds, int StartupTimeoutSeconds, bool SteamCommandTailIgnored)
     {
         public static Options Parse(string[] args)
         {
@@ -565,6 +565,7 @@ internal static class Program
             var attachOnly = false;
             var exitDelaySeconds = 10;
             var startupTimeoutSeconds = 180;
+            var steamCommandTailIgnored = false;
             for (var i = 0; i < args.Length; i++)
             {
                 switch (args[i])
@@ -596,12 +597,20 @@ internal static class Program
                             throw new ArgumentException("--startup-timeout-seconds 必须为 1 到 1800 之间的整数。");
                         break;
                     default:
-                        throw new ArgumentException($"未知参数：{args[i]}");
+                        if (args[i].StartsWith("--", StringComparison.Ordinal))
+                            throw new ArgumentException($"未知参数：{args[i]}");
+
+                        // Steam expands %command% after bridge-owned options. The first
+                        // positional token is the original Steam command; ignore its
+                        // entire tail so it cannot override this bridge's discovery or launch.
+                        steamCommandTailIgnored = true;
+                        i = args.Length;
+                        break;
                 }
             }
 
             return new(installRoot, variant, dryRun, noDialog, attachOnly,
-                exitDelaySeconds, startupTimeoutSeconds);
+                exitDelaySeconds, startupTimeoutSeconds, steamCommandTailIgnored);
         }
     }
 }

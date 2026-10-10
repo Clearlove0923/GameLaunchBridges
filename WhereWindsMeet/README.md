@@ -2,7 +2,7 @@
 
 `WhereWindsMeetLaunchBridge.exe` 用于启动或附着到当前安装目录中的《燕云十六声》游戏本体，并在游戏退出后延迟结束自身。它适合由 Steam 等外部程序启动并跟踪桥接器的生命周期。仓库后续桥接程序统一采用“英文游戏名 + `LaunchBridge`”的文件名。
 
-当前正式版本：`v1.1`。
+当前正式版本：`v1.2`。
 
 ## 功能
 
@@ -27,7 +27,15 @@
 
 输出文件位于 `Release\WhereWindsMeetLaunchBridge.exe`。通常只需把该 EXE 放到包含游戏文件的安装根目录；目录结构更新后无需移动到某个固定子目录。
 
-构建后可运行 `.\tests\Test-PathDiscovery.ps1`，验证标准版、极速版、任意新目录层级、补丁副本排除、改名配置和日志文件夹生成。
+构建后可运行 `.\tests\Test-PathDiscovery.ps1`，验证标准版、极速版、任意新目录层级、补丁副本排除、改名配置、Steam 尾随命令隔离和日志文件夹生成。
+
+通过 Steam 启动选项替换另一个游戏命令时，可使用：
+
+```text
+"E:\Games\yysls\WhereWindsMeetLaunchBridge.exe" %command%
+```
+
+`v1.2` 起会把 `%command%` 展开的原始 Steam 命令识别为尾随载荷并整体忽略，只使用桥接器自身的路径发现与启动配置；桥接器参数必须写在 `%command%` 之前。
 
 ## 游戏更新兼容配置
 
