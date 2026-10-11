@@ -14,3 +14,9 @@
 
 ## 特别说明
 本仓库中的桥接器不是游戏官方组件，不修改或绕过游戏文件、登录系统或反作弊机制。游戏更新可能改变启动链，使用前请先通过官方启动器完成更新并确认游戏可正常运行。
+
+## 开发文档
+
+- [燕云十六声桥接 EXE 实现原理](docs/WhereWindsMeetLaunchBridge.md)
+- [无限暖暖桥接 EXE 实现原理](docs/InfinityNikkiLaunchBridge.md)
+- [卡拉彼丘桥接 EXE 实现原理](docs/CalabiyauLaunchBridge.md)
