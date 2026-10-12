@@ -4,6 +4,8 @@
 **/Release/
 **/Capture/
 **/.dotnet/
+**/.dotnet-*/
+**/build/
 
 # Runtime logs
 *.log
