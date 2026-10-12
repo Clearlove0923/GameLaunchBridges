@@ -20,3 +20,4 @@
 - [燕云十六声桥接 EXE 实现原理](docs/WhereWindsMeetLaunchBridge.md)
 - [无限暖暖桥接 EXE 实现原理](docs/InfinityNikkiLaunchBridge.md)
 - [卡拉彼丘桥接 EXE 实现原理](docs/CalabiyauLaunchBridge.md)
+- [异环桥接 EXE 实现原理](docs/NevernessToEvernessLaunchBridge.md)

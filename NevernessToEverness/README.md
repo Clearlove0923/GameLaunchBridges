@@ -1,6 +1,6 @@
 # 异环启动桥接器
 
-`NevernessToEvernessLaunchBridge.exe` 是使用 C++20 和原生 Win32 API 开发的 Windows x64 桥接器，当前版本 `v1.0`。正式产物静态链接 MSVC 运行库，不依赖 .NET、Python 或额外 VC++ Runtime。
+`NevernessToEvernessLaunchBridge.exe` 是使用 C++20 和原生 Win32 API 开发的 Windows x64 桥接器，当前版本 `v1.0`，已发布至 [GitHub](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/NevernessToEverness-v1.0) 和 [CNB](https://cnb.cool/SteamCN-GameLauncher/GameLaunchBridges/-/releases/tag/NevernessToEverness-v1.0)。正式产物静态链接 MSVC 运行库，不依赖 .NET、Python 或额外 VC++ Runtime。详细设计见[实现原理文档](../docs/NevernessToEvernessLaunchBridge.md)。
 
 桥接器不会直接启动 `HTGame.exe`，也不会使用会导致角色语音缺失的首进程 `/autoplay`。它先以 `/launcher /directly` 隐藏启动官方 `NTEGame.exe`，找到 Qt 主窗口后持续抑制显示，从本次启动器日志确认资源检查完成，再通过 MSAA 调用原生“开始游戏”控件；无障碍控件不可用时，可使用 INI 中的窗口相对坐标回退。游戏启动后，桥接器按进程名和完整路径跟踪 `HTGame.exe`。游戏消失达到退出防抖时间后，桥接器先请求本次创建的启动器正常关闭；若官方程序仅缩到托盘，可在配置的等待时间后终止该启动器进程，避免游戏退出时启动器界面再次弹出。
 
@@ -43,4 +43,4 @@ Steam 展开的原始命令及其尾随参数只用于维持 Steam 的启动链�
 
 对照采集显示，`/launcher /autoplay` 虽然最终使用相同的游戏本体、参数和工作目录，却会在资源状态机完成前直接启动游戏，缺少本地资源检查完成状态；该流程下全部角色语音缺失而音乐与音效正常。再次实测还确认：先启动 `/directly`、再启动第二个 `/autoplay` 进程不会向已有实例传递“开始游戏”动作。因此纯参数桥接不可行，必须在资源检查完成后操作官方启动器控件。
 
-当前 C++ 版本已经通过自动测试和真实安装路径验证；MSAA/相对坐标触发及角色语音仍需完成实机验证，不能以自动测试结果代替。
+当前 C++ v1.0 已通过自动测试；官方资源检查完成、隐藏启动器、相对坐标触发和游戏进程出现已完成实机验证，直接双击桥接器可正常启动。Steam 国服尾随参数修复已通过固定回归测试，尚需再次完成 Steam 客户端实机复测。角色语音正常的结论来自官方 `/directly` 完成资源检查后手动点击的采集流程；游戏更新后仍须重新核对桥接流程，不能以自动测试代替实机语音验证。
