@@ -24,11 +24,25 @@ dotnet publish $projectFile `
     --configuration Release `
     --runtime win-x64 `
     --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:PublishTrimmed=false `
+    -p:PublishAot=true `
     -p:DebugType=None `
     -p:DebugSymbols=false `
     --output $outputRoot
 
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Get-Item -LiteralPath (Join-Path $outputRoot 'CalabiyauLaunchBridge.exe')
+$publishedExe = Join-Path $outputRoot 'CalabiyauLaunchBridge.exe'
+$productVersion = (Get-Item -LiteralPath $publishedExe).VersionInfo.ProductVersion.Split('+')[0]
+$releaseVersion = if ($productVersion.EndsWith('.0')) {
+    $productVersion.Substring(0, $productVersion.Length - 2)
+} else {
+    $productVersion
+}
+$versionedExe = Join-Path $outputRoot "CalabiyauLaunchBridge_v$releaseVersion.exe"
+Copy-Item -LiteralPath $publishedExe -Destination $versionedExe -Force
+$hash = (Get-FileHash -LiteralPath $versionedExe -Algorithm SHA256).Hash
+$checksumPath = "$versionedExe.sha256"
+[IO.File]::WriteAllText(
+    $checksumPath,
+    "$hash  $([IO.Path]::GetFileName($versionedExe))`n",
+    [Text.UTF8Encoding]::new($false))
+Get-Item -LiteralPath $publishedExe, $versionedExe, $checksumPath

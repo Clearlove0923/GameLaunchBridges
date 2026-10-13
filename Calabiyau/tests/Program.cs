@@ -151,11 +151,17 @@ try
     ]);
     var logger = new BridgeLogger(retentionPath);
     logger.Info("test.stack", "first\nsecond");
+    try { throw new InvalidOperationException("fixed error stack sample"); }
+    catch (Exception ex) { logger.Exception("test.exception", ex, "fixed failure context"); }
     var content = File.ReadAllText(retentionPath);
     Check(!content.Contains("expired", StringComparison.Ordinal) && content.Contains("retained", StringComparison.Ordinal),
         "logger should prune entries older than seven days and retain recent entries");
     Check(content.Contains("first\\nsecond", StringComparison.Ordinal),
         "logger should keep multiline stack information in one physical line");
+    Check(content.Contains("System.InvalidOperationException", StringComparison.Ordinal)
+            && content.Contains("fixed error stack sample", StringComparison.Ordinal)
+            && content.Contains(" at ", StringComparison.Ordinal),
+        "logger should retain the exception type, message, and stack trace");
 
     var executable = Environment.ProcessPath!;
     var provider = new ProcessSnapshotProvider();

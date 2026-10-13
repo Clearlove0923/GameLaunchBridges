@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Calabiyau.LaunchBridge;
 
@@ -242,6 +243,12 @@ public sealed record BridgeConfigurationDocument(
     int? SdkInitializationDelaySeconds,
     bool? MinimizeSdkLauncherToTray);
 
+[JsonSourceGenerationOptions(
+    PropertyNameCaseInsensitive = true,
+    ReadCommentHandling = JsonCommentHandling.Skip)]
+[JsonSerializable(typeof(BridgeConfigurationDocument))]
+internal partial class BridgeJsonContext : JsonSerializerContext;
+
 public sealed record ResolvedBridgeConfiguration(
     string ConfigurationPath,
     string InstallRoot,
@@ -411,8 +418,9 @@ public static class BridgeDiscovery
             null, null, null, null);
         try
         {
-            return JsonSerializer.Deserialize<BridgeConfigurationDocument>(File.ReadAllText(path, Encoding.UTF8),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip })
+            return JsonSerializer.Deserialize(
+                File.ReadAllText(path, Encoding.UTF8),
+                BridgeJsonContext.Default.BridgeConfigurationDocument)
                 ?? throw new InvalidDataException("配置文件为空。");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
