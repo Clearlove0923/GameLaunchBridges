@@ -1,37 +1,39 @@
 param(
-    [string] $GameExe
+    [string] $GameExe,
+    [string] $OutputDirectory = (Join-Path $PSScriptRoot 'Release')
 )
 
 $ErrorActionPreference = 'Stop'
-$projectRoot = $PSScriptRoot
-$sourceRoot = Join-Path $projectRoot 'src'
-$projectFile = Join-Path $sourceRoot 'WhereWindsMeetLaunchBridge.csproj'
-$iconFile = Join-Path $sourceRoot 'yysls.ico'
-$outputRoot = Join-Path $projectRoot 'Release'
+$iconFile = Join-Path $PSScriptRoot 'src\yysls.ico'
 
 if ($GameExe) {
     $resolvedGameExe = (Resolve-Path -LiteralPath $GameExe).Path
-    & (Join-Path $projectRoot 'tools\ExtractGameIcon.ps1') `
-        -SourceExe $resolvedGameExe `
-        -DestinationIco $iconFile
+    & (Join-Path $PSScriptRoot 'tools\ExtractGameIcon.ps1') -SourceExe $resolvedGameExe -DestinationIco $iconFile
 }
+if (-not (Test-Path -LiteralPath $iconFile)) { throw "Missing icon: $iconFile" }
 
-$env:DOTNET_CLI_HOME = Join-Path $projectRoot '.dotnet'
-$env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
-$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-
-dotnet publish $projectFile `
-    --configuration Release `
-    --runtime win-x64 `
-    --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:PublishTrimmed=false `
-    -p:DebugType=None `
-    -p:DebugSymbols=false `
-    --output $outputRoot
-
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+if (-not (Test-Path -LiteralPath $vswhere)) {
+    throw 'Visual Studio Build Tools with Desktop development with C++ is required.'
 }
+$vsRoot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if (-not $vsRoot) { throw 'MSVC x64 tools were not found.' }
 
-Get-Item -LiteralPath (Join-Path $outputRoot 'WhereWindsMeetLaunchBridge.exe')
+$cmake = Get-Command cmake -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1
+if (-not $cmake) {
+    $bundledCmake = Join-Path $vsRoot 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+    if (Test-Path -LiteralPath $bundledCmake) { $cmake = $bundledCmake }
+}
+if (-not $cmake) { throw 'CMake was not found. Install the Visual Studio CMake component.' }
+
+$buildRoot = Join-Path $PSScriptRoot 'build\native-x64'
+& $cmake -S $PSScriptRoot -B $buildRoot -A x64 -DCMAKE_BUILD_TYPE=Release
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $cmake --build $buildRoot --config Release --target WhereWindsMeetLaunchBridge WhereWindsMeetLaunchBridgeTestHost
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+[void](New-Item -ItemType Directory -Path $OutputDirectory -Force)
+$builtExe = Join-Path $buildRoot 'Release\WhereWindsMeetLaunchBridge.exe'
+if (-not (Test-Path -LiteralPath $builtExe)) { $builtExe = Join-Path $buildRoot 'WhereWindsMeetLaunchBridge.exe' }
+Copy-Item -LiteralPath $builtExe -Destination (Join-Path $OutputDirectory 'WhereWindsMeetLaunchBridge.exe') -Force
+Get-Item -LiteralPath (Join-Path $OutputDirectory 'WhereWindsMeetLaunchBridge.exe')

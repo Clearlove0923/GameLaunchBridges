@@ -147,7 +147,7 @@ try {
     }
     $errorLog = [IO.File]::ReadAllText(
         (Join-Path $errorRoot 'WhereWindsMeetLaunchBridge-log\where-winds-meet-launch-bridge.log'))
-    if (-not $errorLog.Contains('System.Text.Json.JsonException', [StringComparison]::Ordinal) -or
+    if (-not $errorLog.Contains('JsonParseError', [StringComparison]::Ordinal) -or
         -not $errorLog.Contains(' at ', [StringComparison]::Ordinal)) {
         throw "error-stack log did not include exception type and stack: $errorLog"
     }

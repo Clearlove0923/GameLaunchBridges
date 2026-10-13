@@ -2,7 +2,9 @@
 
 `WhereWindsMeetLaunchBridge.exe` 用于启动或附着到当前安装目录中的《燕云十六声》游戏本体，并在游戏退出后延迟结束自身。它适合由 Steam 等外部程序启动并跟踪桥接器的生命周期。仓库后续桥接程序统一采用“英文游戏名 + `LaunchBridge`”的文件名。
 
-当前正式版本：`v1.2`。
+路径发现、启动链、技术栈和代码实现详见[实现原理文档](../docs/WhereWindsMeetLaunchBridge.md)。
+
+当前版本：`v1.3`。
 
 ## 功能
 
@@ -17,7 +19,7 @@
 
 ## 构建
 
-需要 Windows x64 和 .NET 8 SDK。在本目录执行：
+需要 Windows x64、Visual Studio 2022 C++ Build Tools 和 CMake。在本目录执行：
 
 ```powershell
 .\build.ps1 -GameExe "D:\Games\yysls\yysls_medium\Engine\Binaries\Win64r\yysls.exe"
@@ -25,7 +27,7 @@
 
 仓库已包含当前从游戏本体提取的多尺寸 `yysls.ico`，直接运行构建脚本即可生成带图标的 EXE。`-GameExe` 可选；提供后，脚本会先从指定的本机游戏 EXE 重新提取图标，适合游戏图标更新后的维护。
 
-输出文件位于 `Release\WhereWindsMeetLaunchBridge.exe`。通常只需把该 EXE 放到包含游戏文件的安装根目录；目录结构更新后无需移动到某个固定子目录。
+输出文件位于 `Release\WhereWindsMeetLaunchBridge.exe`。它是使用静态 MSVC 运行库构建的原生 x64 单文件程序，不需要安装 .NET 或额外 VC++ Runtime。用户只需把该 EXE 复制到包含游戏文件的安装根目录并运行；目录结构更新后无需移动到某个固定子目录。JSON 配置是可选的，未放置配置文件时使用内置默认值。
 
 构建后可运行 `.\tests\Test-PathDiscovery.ps1`，验证标准版、极速版、任意新目录层级、补丁副本排除、改名配置、Steam 尾随命令隔离和日志文件夹生成。
 
@@ -35,7 +37,7 @@
 "E:\Games\yysls\WhereWindsMeetLaunchBridge.exe" %command%
 ```
 
-`v1.2` 起会把 `%command%` 展开的原始 Steam 命令识别为尾随载荷并整体忽略，只使用桥接器自身的路径发现与启动配置；桥接器参数必须写在 `%command%` 之前。
+`v1.2` 起会把 `%command%` 展开的原始 Steam 命令识别为尾随载荷并整体忽略，只使用桥接器自身的路径发现与启动配置；桥接器参数必须写在 `%command%` 之前。`v1.3` 将桥接器重构为原生 C++20，保持该参数行为和原有 JSON 格式兼容。
 
 ## 游戏更新兼容配置
 
@@ -85,4 +87,4 @@
 - 游戏改为多个进程接力，或退出期间出现新的临时进程；
 - 游戏图标更新，需要重新提取后构建。
 
-桥接器不会伪造 Steam 状态，也不绕过登录或反作弊。自包含构建、路径识别、日志保留和模拟进程生命周期可以自动验证，但真实游戏启动、UAC、反作弊和 Steam 跟踪需要在目标电脑手动验证。
+桥接器不会伪造 Steam 状态，也不绕过登录或反作弊。原生单文件构建、路径识别、JSON 配置、日志保留和模拟进程生命周期可以自动验证，但真实游戏启动、UAC、反作弊和 Steam 跟踪需要在目标电脑手动验证。
