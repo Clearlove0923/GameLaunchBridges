@@ -49,8 +49,16 @@ try
     WriteOfficialLaunchLog(standard, standardWrapper, ", ",
         "-Channel=channel=PCCNGF80001", "-dx12", "-Lanuch=IdsCn", "-AdsPath=fixture");
 
+    var unknownOptions = CommandLineOptions.Parse(["--future-option", "--validate", "--another-option"]);
+    Check(unknownOptions.ValidateOnly
+          && unknownOptions.IgnoredArguments.SequenceEqual(["--future-option", "--another-option"])
+          && !unknownOptions.SteamCommandTailIgnored,
+        "unknown double-dash options should be ignored while known bridge options continue to parse");
+
     var options = CommandLineOptions.Parse(["--install-root", standard, "C:\\Steam\\original.exe", "-ignored"]);
-    Check(options.SteamCommandTailIgnored, "Steam command tail should be ignored");
+    Check(options.SteamCommandTailIgnored
+          && options.IgnoredArguments.SequenceEqual(["C:\\Steam\\original.exe", "-ignored"]),
+        "Steam command tail should be ignored and retained for logging");
     var standardResolved = BridgeDiscovery.Resolve(options, standard);
     Check(standardResolved.LauncherPath.Equals(standardWrapper, StringComparison.OrdinalIgnoreCase),
         "standard layout should select the nested game wrapper instead of the root official launcher");
@@ -67,6 +75,12 @@ try
         "standard layout should reuse the latest validated official direct-launch arguments");
     Check(!standardResolved.RunAsAdministrator,
         "default launch should preserve the non-elevated official shortcut context");
+
+    var nestedBridgeDirectory = Path.Combine(standard, "Calabiyau", "CalabiyauGame", "PM", "BridgeTools", "Nested");
+    Directory.CreateDirectory(nestedBridgeDirectory);
+    var nestedResolved = BridgeDiscovery.Resolve(CommandLineOptions.Parse([]), nestedBridgeDirectory);
+    Check(nestedResolved.InstallRoot.Equals(standard, StringComparison.OrdinalIgnoreCase),
+        "bridge placed anywhere below the install root should discover the nearest official root by walking upward");
 
     var tencent = Path.Combine(root, "tencent", "CalabiYau");
     var tencentLauncher = Path.Combine(tencent, "CalabiYau.exe");

@@ -35,6 +35,9 @@ public static class Program
             logger.Info("command.parsed",
                 $"installRoot={options.InstallRoot ?? "<auto>"}；validateOnly={options.ValidateOnly}；"
                 + $"attachOnly={options.AttachOnly}；noDialog={options.NoDialog}；steamCommandTailIgnored={options.SteamCommandTailIgnored}");
+            if (options.IgnoredArguments.Count > 0)
+                logger.Info("command.arguments_ignored",
+                    $"已忽略无法识别的启动参数或 Steam 尾随命令：{LogSanitizer.FormatArguments(options.IgnoredArguments)}");
             var resolved = BridgeDiscovery.Resolve(options, AppContext.BaseDirectory, logger);
             logger.Info("configuration.resolved",
                 $"source={resolved.ConfigurationPath}；installRoot={resolved.InstallRoot}；directEntry={resolved.LauncherPath}；"
@@ -169,6 +172,7 @@ public sealed record CommandLineOptions(
     bool NoDialog,
     int? StartupTimeoutSeconds,
     int? ExitDelaySeconds,
+    IReadOnlyList<string> IgnoredArguments,
     bool SteamCommandTailIgnored,
     bool ElevatedWorker)
 {
@@ -177,6 +181,7 @@ public sealed record CommandLineOptions(
         string? installRoot = null;
         bool validateOnly = false, attachOnly = false, noDialog = false, steamTail = false, elevatedWorker = false;
         int? startupTimeout = null, exitDelay = null;
+        var ignoredArguments = new List<string>();
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -184,6 +189,8 @@ public sealed record CommandLineOptions(
                 case "--install-root" when i + 1 < args.Length:
                     installRoot = args[++i];
                     break;
+                case "--install-root":
+                    throw MissingValue("--install-root");
                 case "--validate":
                 case "--dry-run":
                     validateOnly = true;
@@ -200,21 +207,33 @@ public sealed record CommandLineOptions(
                 case "--startup-timeout-seconds" when i + 1 < args.Length:
                     startupTimeout = ParseRange(args[++i], 1, 3600, "--startup-timeout-seconds");
                     break;
+                case "--startup-timeout-seconds":
+                    throw MissingValue("--startup-timeout-seconds");
                 case "--exit-delay-seconds" when i + 1 < args.Length:
                     exitDelay = ParseRange(args[++i], 0, 300, "--exit-delay-seconds");
                     break;
+                case "--exit-delay-seconds":
+                    throw MissingValue("--exit-delay-seconds");
                 default:
                     if (args[i].StartsWith("--", StringComparison.Ordinal))
-                        throw new BridgeException(BridgeExitCode.InvalidConfiguration, $"未知参数：{args[i]}");
+                    {
+                        ignoredArguments.Add(args[i]);
+                        break;
+                    }
 
                     steamTail = true;
+                    ignoredArguments.AddRange(args[i..]);
                     i = args.Length;
                     break;
             }
         }
 
-        return new(installRoot, validateOnly, attachOnly, noDialog, startupTimeout, exitDelay, steamTail, elevatedWorker);
+        return new(installRoot, validateOnly, attachOnly, noDialog, startupTimeout, exitDelay,
+            ignoredArguments, steamTail, elevatedWorker);
     }
+
+    private static BridgeException MissingValue(string name) =>
+        new(BridgeExitCode.InvalidConfiguration, $"{name} 缺少参数值。");
 
     private static int ParseRange(string value, int minimum, int maximum, string name)
     {
@@ -280,9 +299,7 @@ public static class BridgeDiscovery
         string baseDirectory,
         BridgeLogger? logger = null)
     {
-        var installRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(options.InstallRoot ?? baseDirectory));
-        if (!Directory.Exists(installRoot))
-            throw new BridgeException(BridgeExitCode.InvalidConfiguration, $"安装目录不存在：{installRoot}");
+        var installRoot = ResolveInstallRoot(options.InstallRoot, baseDirectory, logger);
 
         var configPath = Path.Combine(baseDirectory, ConfigurationFileName);
         var document = LoadConfiguration(configPath);
@@ -370,6 +387,47 @@ public static class BridgeDiscovery
             sdkLauncher,
             TimeSpan.FromSeconds(sdkInitializationSeconds),
             document.MinimizeSdkLauncherToTray ?? true);
+    }
+
+    public static string ResolveInstallRoot(
+        string? explicitInstallRoot,
+        string baseDirectory,
+        BridgeLogger? logger = null)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitInstallRoot))
+        {
+            var explicitRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(explicitInstallRoot));
+            if (!Directory.Exists(explicitRoot))
+                throw new BridgeException(BridgeExitCode.InvalidConfiguration, $"安装目录不存在：{explicitRoot}");
+            logger?.Info("discovery.install_root", $"source=explicit；selected={explicitRoot}");
+            return explicitRoot;
+        }
+
+        var bridgeDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(baseDirectory));
+        if (!Directory.Exists(bridgeDirectory))
+            throw new BridgeException(BridgeExitCode.InvalidConfiguration, $"桥接器所在目录不存在：{bridgeDirectory}");
+
+        for (var candidate = new DirectoryInfo(bridgeDirectory); candidate is not null; candidate = candidate.Parent)
+        {
+            if (!LooksLikeOfficialInstallRoot(candidate.FullName)) continue;
+            var selected = Path.TrimEndingDirectorySeparator(candidate.FullName);
+            logger?.Info("discovery.install_root",
+                $"source=bridge-ancestor；bridgeDirectory={bridgeDirectory}；selected={selected}");
+            return selected;
+        }
+
+        throw new BridgeException(BridgeExitCode.InvalidConfiguration,
+            $"无法从桥接器所在目录向上识别《卡拉彼丘》安装根目录：{bridgeDirectory}。"
+            + "请把桥接器放在游戏安装目录内的任意位置，或使用 --install-root 显式指定安装根目录。");
+    }
+
+    private static bool LooksLikeOfficialInstallRoot(string directory)
+    {
+        var hasOfficialEntry = DefaultLauncherNames.Any(name => File.Exists(Path.Combine(directory, name)));
+        if (!hasOfficialEntry) return false;
+        return Directory.Exists(Path.Combine(directory, "log"))
+               || Directory.Exists(Path.Combine(directory, "Calabiyau"))
+               || File.Exists(Path.Combine(directory, "config.ini"));
     }
 
     public static IReadOnlyList<string> FindExecutables(

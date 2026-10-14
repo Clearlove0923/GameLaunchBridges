@@ -30,25 +30,30 @@ try {
     $logLine = '10-10 12:00:00.000: Debug/(0): start game: "' + $wrapperPath.Replace('\', '/') + '"  args: ("-Channel=fixture", "-dx12", "-Lanuch=IdsCn", "-AdsPath=fixture")'
     [IO.File]::WriteAllText((Join-Path $logDirectory 'launcher.log'), $logLine, [Text.Encoding]::GetEncoding(936))
     # The release attachment keeps its versioned file name. Users can copy it
-    # directly beside the official launcher without renaming or configuration.
-    $caseBridge = Join-Path $testRoot 'CalabiyauLaunchBridge_v1.2.exe'
+    # anywhere below the game installation root without renaming or configuration.
+    $bridgeDirectory = Join-Path $testRoot 'Calabiyau\CalabiyauGame\PM\BridgeTools\Nested'
+    [IO.Directory]::CreateDirectory($bridgeDirectory) | Out-Null
+    $caseBridge = Join-Path $bridgeDirectory 'CalabiyauLaunchBridge_v1.3.exe'
     [IO.File]::Copy($resolvedBridge, $caseBridge)
 
-    $process = [Diagnostics.Process]::Start($caseBridge, '--validate --no-dialog')
+    $process = [Diagnostics.Process]::Start($caseBridge, '--unknown-option --validate --no-dialog')
     $process.WaitForExit()
     if ($process.ExitCode -ne 0) { throw "Published bridge validation failed with exit code $($process.ExitCode)." }
 
-    $logPath = Join-Path $testRoot 'CalabiyauLaunchBridge-log\CalabiyauLaunchBridge.log'
+    $logPath = Join-Path $bridgeDirectory 'CalabiyauLaunchBridge-log\CalabiyauLaunchBridge.log'
     if (-not [IO.File]::Exists($logPath)) { throw "Published bridge did not create the expected log: $logPath" }
     $log = [IO.File]::ReadAllText($logPath)
     foreach ($expected in @(
-        'version=1.2.0.0',
+        'version=1.3.0.0',
         'processArchitecture=X64',
         'CalabiYau.exe',
         'launch_record.selected',
         'sdkLauncher=',
         'directEntry=',
         'Calabiyau-Win64-Shipping.exe',
+        '[Event=command.arguments_ignored]',
+        '--unknown-option',
+        'source=bridge-ancestor',
         '[Event=validation.success]',
         'exitCode=0'
     )) {
@@ -57,16 +62,16 @@ try {
         }
     }
 
-    $failure = [Diagnostics.Process]::Start($caseBridge, '--unknown-option --no-dialog')
+    $failure = [Diagnostics.Process]::Start($caseBridge, '--startup-timeout-seconds invalid --no-dialog')
     $failure.WaitForExit()
     if ($failure.ExitCode -eq 0) { throw 'Published bridge unexpectedly accepted an unknown option.' }
     $failureLog = [IO.File]::ReadAllText($logPath)
-    foreach ($expectedFailureText in @('BridgeException', '未知参数', ' at ')) {
+    foreach ($expectedFailureText in @('BridgeException', '--startup-timeout-seconds 必须为', ' at ')) {
         if ($failureLog.IndexOf($expectedFailureText, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
             throw "Published bridge error log is missing '$expectedFailureText'."
         }
     }
-    Write-Output 'PASS portable published bridge: versioned filename, zero-config discovery, exact paths, native architecture, log path, and validation exit code'
+    Write-Output 'PASS portable published bridge: arbitrary in-install placement, ignored unknown arguments, versioned filename, exact paths, native architecture, log path, and validation exit code'
 }
 finally {
     if ([IO.Directory]::Exists($testRoot)) { [IO.Directory]::Delete($testRoot, $true) }
