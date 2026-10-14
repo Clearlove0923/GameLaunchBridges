@@ -24,7 +24,7 @@ using namespace std::chrono_literals;
 namespace {
 constexpr wchar_t ProductName[] = L"WhereWindsMeetLaunchBridge";
 constexpr wchar_t DialogTitle[] = L"燕云十六声直启实验";
-constexpr wchar_t Version[] = L"1.3.0";
+constexpr wchar_t Version[] = L"1.4.0";
 constexpr auto PollInterval = 500ms;
 
 std::wstring Trim(std::wstring value) {
@@ -365,6 +365,7 @@ private:
 struct Options {
     std::optional<fs::path> installRoot;
     std::optional<std::wstring> variant;
+    std::vector<std::wstring> ignoredArguments;
     bool dryRun = false, noDialog = false, attachOnly = false, steamCommandTailIgnored = false;
     int exitDelaySeconds = 10, startupTimeoutSeconds = 180;
 };
@@ -382,18 +383,39 @@ Options ParseOptions() {
     try {
         for (int i = 1; i < count; ++i) {
             const std::wstring argument = argv[i];
-            if (argument == L"--install-root" && i + 1 < count) result.installRoot = fs::path(argv[++i]);
-            else if (argument == L"--variant" && i + 1 < count) {
-                result.variant = argv[++i];
-                if (result.variant->empty() || result.variant->size() > 64 || result.variant->find_first_of(L"/\\") != std::wstring::npos)
-                    throw BridgeError("ArgumentError", "--variant must be a directory name no longer than 64 characters");
+            if (argument == L"--install-root") {
+                if (i + 1 < count && std::wstring(argv[i + 1]).rfind(L"--", 0) != 0) result.installRoot = fs::path(argv[++i]);
+                else result.ignoredArguments.push_back(argument);
+            } else if (argument == L"--variant") {
+                if (i + 1 >= count || std::wstring(argv[i + 1]).rfind(L"--", 0) == 0) result.ignoredArguments.push_back(argument);
+                else {
+                    const std::wstring value = argv[++i];
+                    if (value.empty() || value.size() > 64 || value.find_first_of(L"/\\") != std::wstring::npos) {
+                        result.ignoredArguments.push_back(argument);
+                        result.ignoredArguments.push_back(value);
+                    } else result.variant = value;
+                }
             } else if (argument == L"--dry-run") result.dryRun = true;
             else if (argument == L"--no-dialog") result.noDialog = true;
             else if (argument == L"--attach-only") result.attachOnly = true;
-            else if (argument == L"--exit-delay-seconds" && i + 1 < count) result.exitDelaySeconds = ParseInteger(argv[++i], 0, 300, "--exit-delay-seconds");
-            else if (argument == L"--startup-timeout-seconds" && i + 1 < count) result.startupTimeoutSeconds = ParseInteger(argv[++i], 1, 1800, "--startup-timeout-seconds");
-            else if (argument.rfind(L"--", 0) == 0) throw BridgeError("ArgumentError", "Unknown or incomplete command-line argument");
-            else { result.steamCommandTailIgnored = true; break; }
+            else if (argument == L"--exit-delay-seconds" || argument == L"--startup-timeout-seconds") {
+                if (i + 1 >= count || std::wstring(argv[i + 1]).rfind(L"--", 0) == 0) result.ignoredArguments.push_back(argument);
+                else {
+                    const std::wstring value = argv[++i];
+                    try {
+                        if (argument == L"--exit-delay-seconds") result.exitDelaySeconds = ParseInteger(value.c_str(), 0, 300, "--exit-delay-seconds");
+                        else result.startupTimeoutSeconds = ParseInteger(value.c_str(), 1, 1800, "--startup-timeout-seconds");
+                    } catch (const BridgeError&) {
+                        result.ignoredArguments.push_back(argument);
+                        result.ignoredArguments.push_back(value);
+                    }
+                }
+            } else if (argument.rfind(L"--", 0) == 0) result.ignoredArguments.push_back(argument);
+            else {
+                result.steamCommandTailIgnored = true;
+                for (; i < count; ++i) result.ignoredArguments.emplace_back(argv[i]);
+                break;
+            }
         }
     } catch (...) { LocalFree(argv); throw; }
     LocalFree(argv); return result;
@@ -406,8 +428,9 @@ bool HasSegment(const fs::path& path, const std::wstring& segment) {
     return false;
 }
 
-std::vector<fs::path> FindExecutables(const fs::path& root, const Configuration& config, const std::optional<std::wstring>& variant) {
+std::vector<fs::path> FindExecutables(const fs::path& root, const Configuration& config, const std::optional<std::wstring>& variant, int maximumDepth = -1) {
     std::vector<fs::path> found;
+    const int searchDepth = maximumDepth < 0 ? config.maxSearchDepth : maximumDepth;
     std::vector<std::pair<fs::path, int>> pending{{root, 0}};
     while (!pending.empty()) {
         auto [directory, depth] = pending.back(); pending.pop_back();
@@ -415,7 +438,7 @@ std::vector<fs::path> FindExecutables(const fs::path& root, const Configuration&
             const fs::path candidate = directory / name; std::error_code error;
             if (fs::is_regular_file(candidate, error) && (!variant || HasSegment(candidate, *variant))) found.push_back(fs::absolute(candidate).lexically_normal());
         }
-        if (depth >= config.maxSearchDepth) continue;
+        if (depth >= searchDepth) continue;
         std::error_code error;
         for (const auto& entry : fs::directory_iterator(directory, fs::directory_options::skip_permission_denied, error)) {
             if (error) break;
@@ -436,6 +459,33 @@ std::vector<fs::path> FindExecutables(const fs::path& root, const Configuration&
     std::sort(found.begin(), found.end(), [&](const auto& a, const auto& b) { const int sa = score(a), sb = score(b); return sa != sb ? sa < sb : _wcsicmp(a.c_str(), b.c_str()) < 0; });
     found.erase(std::unique(found.begin(), found.end(), EqualPath), found.end());
     return found;
+}
+
+struct InstallationDiscovery {
+    fs::path root;
+    std::vector<fs::path> executables;
+    std::vector<fs::path> searchedScopes;
+};
+
+InstallationDiscovery DiscoverInstallation(const Options& options, const Configuration& config) {
+    if (options.installRoot) {
+        const fs::path root = fs::absolute(*options.installRoot).lexically_normal();
+        if (!fs::is_directory(root)) throw BridgeError("DirectoryNotFoundError", "Game installation directory does not exist: " + Utf8(root.wstring()));
+        return {root, FindExecutables(root, config, std::nullopt), {root}};
+    }
+
+    fs::path scope = fs::absolute(ExecutablePath().parent_path()).lexically_normal();
+    std::vector<fs::path> searched;
+    constexpr int MaximumAncestorScopes = 32;
+    for (int ascent = 0; ascent < MaximumAncestorScopes; ++ascent) {
+        searched.push_back(scope);
+        auto found = FindExecutables(scope, config, std::nullopt, config.maxSearchDepth);
+        if (!found.empty()) return {scope, std::move(found), std::move(searched)};
+        const fs::path parent = scope.parent_path();
+        if (parent.empty() || parent == scope || parent == parent.root_path()) break;
+        scope = parent;
+    }
+    return {ExecutablePath().parent_path(), {}, std::move(searched)};
 }
 
 std::optional<fs::path> ProcessPath(DWORD pid) {
@@ -487,6 +537,30 @@ std::wstring JoinIds(const std::vector<DWORD>& ids) { std::wstring result; for (
 std::wstring JoinStrings(const std::vector<std::wstring>& values) { std::wstring result; for (const auto& value : values) { if (!result.empty()) result += L","; result += value; } return result; }
 std::wstring Bool(bool value) { return value ? L"True" : L"False"; }
 
+bool IsSensitiveArgumentName(const std::wstring& argument) {
+    if (argument.empty() || (argument[0] != L'-' && argument[0] != L'/')) return false;
+    std::wstring lower = argument; std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
+    for (const wchar_t* sensitive : {L"token", L"cookie", L"password", L"passwd", L"secret", L"session", L"key"}) {
+        if (lower.find(sensitive) != std::wstring::npos) return true;
+    }
+    return false;
+}
+
+std::wstring JoinArgumentsForLog(const std::vector<std::wstring>& values) {
+    std::wstring result;
+    bool redactNext = false;
+    for (const auto& value : values) {
+        if (!result.empty()) result += L" | ";
+        if (redactNext) { result += L"<redacted>"; redactNext = false; continue; }
+        if (IsSensitiveArgumentName(value)) {
+            const size_t equals = value.find(L'=');
+            result += equals == std::wstring::npos ? value : value.substr(0, equals + 1) + L"<redacted>";
+            redactNext = equals == std::wstring::npos;
+        } else result += value;
+    }
+    return result.empty() ? L"<none>" : result;
+}
+
 void WriteConsoleUtf8(DWORD stream, const std::wstring& text) {
     const std::string bytes = Utf8(text); HANDLE handle = GetStdHandle(stream); if (!handle || handle == INVALID_HANDLE_VALUE) return;
     DWORD written = 0; WriteFile(handle, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr);
@@ -498,22 +572,24 @@ int Run(const Options& options, Logger& log) {
     log.Info(L"Options: installRoot=" + (options.installRoot ? options.installRoot->wstring() : L"<exe directory>") + L", dryRun=" + Bool(options.dryRun) +
         L", attachOnly=" + Bool(options.attachOnly) + L", exitDelay=" + std::to_wstring(options.exitDelaySeconds) + L"s, startupTimeout=" +
         std::to_wstring(options.startupTimeoutSeconds) + L"s, variant=" + (options.variant ? *options.variant : L"auto") +
-        L", steamCommandTailIgnored=" + Bool(options.steamCommandTailIgnored));
+        L", steamCommandTailIgnored=" + Bool(options.steamCommandTailIgnored) + L", ignoredArguments=" + JoinArgumentsForLog(options.ignoredArguments));
     const fs::path configPath = ExecutablePath().parent_path() / L"WhereWindsMeetLaunchBridge.json";
     const Configuration config = LoadConfiguration(configPath);
     log.Info(L"Configuration: path=" + configPath.wstring() + L", exists=" + Bool(fs::exists(configPath)) + L", executableNames=" + JoinStrings(config.executableNames) +
         L", launchArguments=" + config.launchArguments + L", maxSearchDepth=" + std::to_wstring(config.maxSearchDepth));
-    const fs::path root = fs::absolute(options.installRoot.value_or(ExecutablePath().parent_path())).lexically_normal();
-    if (!fs::is_directory(root)) throw BridgeError("DirectoryNotFoundError", "Game installation directory does not exist: " + Utf8(root.wstring()));
+    const InstallationDiscovery discovery = DiscoverInstallation(options, config);
+    const fs::path root = discovery.root;
+    log.Info(L"Discovery scopes: " + Join(discovery.searchedScopes));
     log.Info(L"Install root: " + root.wstring());
-    const auto allPaths = FindExecutables(root, config, std::nullopt);
+    const auto& allPaths = discovery.executables;
     log.Info(L"Tracked game paths: " + Join(allPaths));
     for (const auto& path : allPaths) {
         std::error_code error; const auto size = fs::file_size(path, error);
         log.Info(L"Candidate executable: path=" + path.wstring() + (error ? L"" : L", size=" + std::to_wstring(size)));
     }
     if (allPaths.empty()) throw BridgeError("FileNotFoundError", "Game executable was not found in the bounded installation scope");
-    const auto selectedPaths = options.variant ? FindExecutables(root, config, options.variant) : allPaths;
+    std::vector<fs::path> selectedPaths = allPaths;
+    if (options.variant) std::erase_if(selectedPaths, [&](const auto& path) { return !HasSegment(path, *options.variant); });
     if (selectedPaths.empty()) throw BridgeError("FileNotFoundError", "No game executable matched --variant");
     const fs::path selected = selectedPaths.front();
     if (options.dryRun) {

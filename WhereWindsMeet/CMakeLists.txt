@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(WhereWindsMeetLaunchBridge VERSION 1.3.0 LANGUAGES CXX RC)
+project(WhereWindsMeetLaunchBridge VERSION 1.4.0 LANGUAGES CXX RC)
 
 function(configure_bridge_target target)
     target_compile_features(${target} PRIVATE cxx_std_20)

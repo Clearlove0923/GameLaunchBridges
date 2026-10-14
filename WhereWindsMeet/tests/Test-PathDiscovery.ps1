@@ -11,8 +11,14 @@ function New-EmptyFile([string] $Path) {
     [IO.File]::WriteAllBytes($Path, [byte[]]::new(0))
 }
 
-function Invoke-DryRun([string] $CaseRoot, [string[]] $ExtraArguments = @()) {
-    $caseBridge = Join-Path $CaseRoot 'WhereWindsMeetLaunchBridge.exe'
+function Invoke-DryRun(
+    [string] $CaseRoot,
+    [string[]] $ExtraArguments = @(),
+    [string] $BridgeRelativeDirectory = ''
+) {
+    $bridgeDirectory = if ($BridgeRelativeDirectory) { Join-Path $CaseRoot $BridgeRelativeDirectory } else { $CaseRoot }
+    [IO.Directory]::CreateDirectory($bridgeDirectory) | Out-Null
+    $caseBridge = Join-Path $bridgeDirectory 'WhereWindsMeetLaunchBridge.exe'
     [IO.File]::Copy($resolvedBridge, $caseBridge)
     $startInfo = [Diagnostics.ProcessStartInfo]::new($caseBridge)
     $startInfo.ArgumentList.Add('--dry-run')
@@ -48,8 +54,9 @@ function Assert-Success([string] $Name, $Result, [string] $ExpectedText) {
     }
 }
 
-function Assert-Log([string] $Name, [string] $CaseRoot) {
-    $logPath = Join-Path $CaseRoot 'WhereWindsMeetLaunchBridge-log\where-winds-meet-launch-bridge.log'
+function Assert-Log([string] $Name, [string] $CaseRoot, [string] $BridgeRelativeDirectory = '') {
+    $bridgeDirectory = if ($BridgeRelativeDirectory) { Join-Path $CaseRoot $BridgeRelativeDirectory } else { $CaseRoot }
+    $logPath = Join-Path $bridgeDirectory 'WhereWindsMeetLaunchBridge-log\where-winds-meet-launch-bridge.log'
     if (-not [IO.File]::Exists($logPath)) {
         throw "$Name did not create the expected log file: $logPath"
     }
@@ -115,6 +122,37 @@ try {
         throw "steam-command-tail was not recorded as ignored: $steamCommandLog"
     }
     Write-Output 'PASS steam-command-tail: Steam-expanded original command ignored'
+
+    $unknownRoot = Join-Path $testRoot 'unknown-arguments'
+    New-EmptyFile (Join-Path $unknownRoot 'Live\yysls.exe')
+    $unknownResult = Invoke-DryRun $unknownRoot @('--future-option', '--mystery-flag=enabled', '--variant', '--token=should-not-appear')
+    Assert-Success 'unknown-arguments' $unknownResult 'Live\yysls.exe'
+    $unknownLog = [IO.File]::ReadAllText(
+        (Join-Path $unknownRoot 'WhereWindsMeetLaunchBridge-log\where-winds-meet-launch-bridge.log'))
+    foreach ($expectedArgument in @('--future-option', '--mystery-flag=enabled', '--variant')) {
+        if (-not $unknownLog.Contains($expectedArgument, [StringComparison]::Ordinal)) {
+            throw "unknown-arguments did not log ignored argument ${expectedArgument}: $unknownLog"
+        }
+    }
+    if (-not $unknownLog.Contains('--token=<redacted>', [StringComparison]::Ordinal) -or
+        $unknownLog.Contains('should-not-appear', [StringComparison]::Ordinal)) {
+        throw "unknown-arguments did not redact a sensitive ignored argument: $unknownLog"
+    }
+    Write-Output 'PASS unknown-arguments: ignored without failure and recorded in log'
+
+    $nestedRoot = Join-Path $testRoot 'nested-bridge'
+    New-EmptyFile (Join-Path $nestedRoot 'GameData\Runtime\Win64r\yysls.exe')
+    $nestedBridgeDirectory = 'Utilities\Steam\Bridge\Deep01\Deep02\Deep03\Deep04\Deep05\Deep06\Deep07\Deep08\Deep09\Deep10\Deep11\Deep12'
+    $nestedResult = Invoke-DryRun $nestedRoot @() $nestedBridgeDirectory
+    Assert-Success 'nested-bridge' $nestedResult 'GameData\Runtime\Win64r\yysls.exe'
+    Assert-Log 'nested-bridge' $nestedRoot $nestedBridgeDirectory
+    $nestedLog = [IO.File]::ReadAllText(
+        (Join-Path $nestedRoot "$nestedBridgeDirectory\WhereWindsMeetLaunchBridge-log\where-winds-meet-launch-bridge.log"))
+    if (-not $nestedLog.Contains('Discovery scopes:', [StringComparison]::Ordinal) -or
+        -not $nestedLog.Contains($nestedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "nested-bridge did not record upward discovery scopes: $nestedLog"
+    }
+    Write-Output 'PASS nested-bridge: bridge discovered game from an arbitrary nested directory'
 
     $retentionRoot = Join-Path $testRoot 'retention'
     New-EmptyFile (Join-Path $retentionRoot 'Live\yysls.exe')
