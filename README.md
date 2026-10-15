@@ -18,6 +18,7 @@
 
 ## 开发文档
 
+- [游戏桥接器开发 Skill：直启验证、Capture 与官方启动链分析](docs/skills/game-launch-bridge/SKILL.md)
 - [燕云十六声桥接 EXE 实现原理](docs/WhereWindsMeetLaunchBridge.md)
 - [无限暖暖桥接 EXE 实现原理](docs/InfinityNikkiLaunchBridge.md)
 - [卡拉彼丘桥接 EXE 实现原理](docs/CalabiyauLaunchBridge.md)
