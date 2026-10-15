@@ -34,6 +34,7 @@
   - `InfinityNikkiLaunchBridge.exe`
   - `NevernessToEvernessLaunchBridge.exe`
 - 每个游戏的 EXE 版本独立计算，均可从 `v1.0` 开始，不受其他游戏版本影响。
+- 后续发布的 Release 显示标题（Release list 中的名称）统一使用“中文游戏名 + 桥接器 + 空格 + v版本号”，例如 `终末地桥接器 v1.0`、`燕云十六声桥接器 v1.4`、`卡拉彼丘桥接器 v1.3`。GitHub、CNB 等发布渠道保持同一中文标题，不再使用英文 EXE 名或 `LaunchBridge` 作为显示标题。历史 Release 的显示标题可按此规则统一更正；更正标题不得改动标签、附件名称或发布正文。
 - GitHub Release 标签使用“英文游戏名 + `-v` + 版本”，例如 `WhereWindsMeet-v1.0`、`InfinityNikki-v1.0`；已有历史标签可继续保留。
 - Release 附件名使用“EXE 名称 + 下划线 + 版本”，不再附加平台，例如 `WhereWindsMeetLaunchBridge_v1.0.exe`。
 - 项目版本、Release 标签中的版本部分、README 当前版本和附件名必须一致。
