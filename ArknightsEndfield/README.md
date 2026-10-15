@@ -1,6 +1,6 @@
 # 明日方舟：终末地 LaunchBridge
 
-当前版本 **[v1.0](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/ArknightsEndfield-v1.0)，C++20 原生 Windows x64**。发布程序为单文件 `Release/ArknightsEndfieldLaunchBridge.exe`，静态链接 MSVC 运行库，仅依赖 Windows 系统 DLL，无需安装 .NET 或 VC++ 运行库。采用官方游戏多尺寸图标。
+当前版本 **v1.0（[GitHub](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/ArknightsEndfield-v1.0) / [CNB](https://cnb.cool/SteamCN-GameLauncher/GameLaunchBridges/-/releases/tag/ArknightsEndfield-v1.0)），C++20 原生 Windows x64**。发布程序为单文件 `Release/ArknightsEndfieldLaunchBridge.exe`，静态链接 MSVC 运行库，仅依赖 Windows 系统 DLL，无需安装 .NET 或 VC++ 运行库。采用官方游戏多尺寸图标。
 
 ## 使用
 

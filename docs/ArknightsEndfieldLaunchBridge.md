@@ -1,6 +1,6 @@
 # Arknights Endfield LaunchBridge v1.0 实现原理
 
-当前实现为 C++20 原生 Windows x64，静态 MSVC 运行库、单文件。2026-10-15 已完成构建、自动检查，用户已实机确认 C++ 版本启动正常。正式版本 [v1.0](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/ArknightsEndfield-v1.0)。历史原型验证与当前 C++ 实机结论分开记录。
+当前实现为 C++20 原生 Windows x64，静态 MSVC 运行库、单文件。2026-10-15 已完成构建、自动检查，用户已实机确认 C++ 版本启动正常。正式版本 v1.0（[GitHub](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/ArknightsEndfield-v1.0) / [CNB](https://cnb.cool/SteamCN-GameLauncher/GameLaunchBridges/-/releases/tag/ArknightsEndfield-v1.0)）。历史原型验证与当前 C++ 实机结论分开记录。
 
 ## 为什么需要桥接器
 
