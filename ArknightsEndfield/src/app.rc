@@ -1,0 +1,32 @@
+#include <windows.h>
+
+1 ICON "../tools/endfield.ico"
+1 RT_MANIFEST "app.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "CompanyName", "GameLaunchBridges\0"
+            VALUE "FileDescription", "Arknights Endfield Launch Bridge\0"
+            VALUE "FileVersion", "1.0.0\0"
+            VALUE "InternalName", "ArknightsEndfieldLaunchBridge\0"
+            VALUE "OriginalFilename", "ArknightsEndfieldLaunchBridge.exe\0"
+            VALUE "ProductName", "ArknightsEndfieldLaunchBridge\0"
+            VALUE "ProductVersion", "1.0.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0804, 1200
+    END
+END
