@@ -1,7 +1,6 @@
 # Game Launch Bridges
-
-面向 Windows 游戏的独立启动与进程生命周期桥接器集合。
-用于绕过游戏厂商不能直接启动游戏本体的限制，从而达到通过执行一个exe即可启动的目的
+- 面向 Windows 游戏的独立启动与进程生命周期桥接器集合。
+- 用于绕过游戏厂商不能直接启动游戏本体的限制，从而达到通过执行一个exe即可启动的目的
 
 ## 目录
 
@@ -14,13 +13,8 @@
 | 明日方舟：终末地（Arknights Endfield） | [`ArknightsEndfield/`](ArknightsEndfield/) | EXE 可用性：v1.0 已发布（[GitHub](https://github.com/Clearlove0923/GameLaunchBridges/releases/tag/ArknightsEndfield-v1.0) / [CNB](https://cnb.cool/SteamCN-GameLauncher/GameLaunchBridges/-/releases/tag/ArknightsEndfield-v1.0)），C++20 原生 Windows x64 单文件，无需 .NET 或额外 VC++ 运行库 |
 
 ## 特别说明
-本仓库中的桥接器不是游戏官方组件，不修改或绕过游戏文件、登录系统或反作弊机制。游戏更新可能改变启动链，使用前请先通过官方启动器完成更新并确认游戏可正常运行。
+- 本仓库中的桥接器不是游戏官方组件，不修改或绕过游戏文件、登录系统或反作弊机制。
+- 桥接器只负责完整走过游戏启动流程，不会修改游戏文件，更不会修改内存数据
+- 游戏更新可能改变启动链，如果官方有改动需要重新适配，使用前请先通过官方启动器完成更新并确认游戏可正常运行。
+- 桥接器不会全盘扫描用户文件，只会在放置位置进行有限查找发现，建议将游戏相关文件都放在一个文件夹
 
-## 开发文档
-
-- [游戏桥接器开发 Skill：直启验证、Capture 与官方启动链分析](docs/skills/game-launch-bridge/SKILL.md)
-- [燕云十六声桥接 EXE 实现原理](docs/WhereWindsMeetLaunchBridge.md)
-- [无限暖暖桥接 EXE 实现原理](docs/InfinityNikkiLaunchBridge.md)
-- [卡拉彼丘桥接 EXE 实现原理](docs/CalabiyauLaunchBridge.md)
-- [异环桥接 EXE 实现原理](docs/NevernessToEvernessLaunchBridge.md)
-- [终末地桥接 EXE 实现原理](docs/ArknightsEndfieldLaunchBridge.md)
