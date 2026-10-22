@@ -18,11 +18,17 @@ function New-Stub([string] $Path) {
 }
 
 function Invoke-Bridge([string[]] $Arguments) {
-    $process = Start-Process -FilePath $testHost -ArgumentList $Arguments -Wait -PassThru
+    return Invoke-BridgeExecutable -Executable $testHost -Arguments $Arguments
+}
+
+function Invoke-BridgeExecutable([string] $Executable, [string[]] $Arguments) {
+    $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -Wait -PassThru
     return $process.ExitCode
 }
 
 try {
+    & (Join-Path $ProjectRoot 'build\native-x64\Release\NevernessToEvernessRecoveryTests.exe')
+    if ($LASTEXITCODE -ne 0) { throw "Launcher failure recovery tests failed: $LASTEXITCODE" }
     [void](New-Item -ItemType Directory -Path $testRoot)
     $standard = Join-Path $testRoot 'standard'
     New-Stub (Join-Path $standard 'NTELauncher\NTEGame.exe')
@@ -30,7 +36,16 @@ try {
     if ((Invoke-Bridge @('--validate', '--no-dialog', '--install-root', $standard)) -ne 0) { throw 'Standard installation discovery failed.' }
     if ((Invoke-Bridge @('--validate', '--no-dialog', '--install-root', $standard, (Join-Path $standard 'OriginalSteamCommand.exe'), '-steam-flag', 'steam-value')) -ne 0) { throw 'Steam command tail isolation failed.' }
     if ((Invoke-Bridge @('--validate', '--no-dialog', '--install-root', $standard, '--', (Join-Path $standard 'OriginalSteamCommand.exe'), '--steam-owned-option')) -ne 0) { throw 'Explicit Steam command separator handling failed.' }
-    if ((Invoke-Bridge @('--validate', '--no-dialog', '--install-root', $standard, '--unknown-bridge-option')) -eq 0) { throw 'Unknown bridge options must still fail.' }
+    if ((Invoke-Bridge @('--unknown-bridge-option', '--custom-value=visible', '--access-token=secret', '--session', 'private-session', '--validate', '--no-dialog', '--install-root', $standard)) -ne 0) { throw 'Unknown bridge options must be ignored.' }
+    $logFile = Join-Path (Split-Path $testHost -Parent) "$bridgeName-log\$bridgeName.log"
+    $ignoredLog = [IO.File]::ReadAllText($logFile)
+    if ($ignoredLog -notmatch 'arguments\.ignored' -or $ignoredLog -notmatch '--unknown-bridge-option' -or $ignoredLog -notmatch 'custom-value=visible' -or $ignoredLog -notmatch 'access-token=<redacted>' -or $ignoredLog -match 'access-token=secret' -or $ignoredLog -match 'private-session') { throw 'Ignored argument logging or selective redaction failed.' }
+
+    $nestedBridgeDirectory = Join-Path $standard 'Client\WindowsNoEditor\HT\Binaries\Win64\Tools\Steam\Nested\Bridge'
+    [void](New-Item -ItemType Directory -Path $nestedBridgeDirectory -Force)
+    $nestedBridge = Join-Path $nestedBridgeDirectory (Split-Path $testHost -Leaf)
+    Copy-Item -LiteralPath $testHost -Destination $nestedBridge
+    if ((Invoke-BridgeExecutable -Executable $nestedBridge -Arguments @('--validate', '--no-dialog')) -ne 0) { throw 'Discovery from an arbitrary nested installation directory failed.' }
 
     $compact = Join-Path $testRoot 'compact'
     New-Stub (Join-Path $compact 'Runtime\NTEGame.exe')
@@ -50,7 +65,6 @@ try {
     [IO.File]::WriteAllText($config, "[Paths]`r`nLauncherFileName=CustomLauncher.exe`r`nGameFileName=CustomGame.exe`r`nLauncherCandidates=A/CustomLauncher.exe`r`nGameCandidates=B/CustomGame.exe`r`n")
     if ((Invoke-Bridge @('--validate', '--no-dialog', '--install-root', $custom, '--config', $config)) -ne 0) { throw 'Config override validation failed.' }
 
-    $logFile = Join-Path (Split-Path $testHost -Parent) "$bridgeName-log\$bridgeName.log"
     $old = "[$((Get-Date).AddDays(-9).ToString('o'))] old-entry"
     $recent = "[$((Get-Date).AddDays(-1).ToString('o'))] recent-entry"
     [IO.File]::WriteAllLines($logFile, [string[]]@($old, $recent))
@@ -67,9 +81,12 @@ try {
     & (Join-Path $ProjectRoot 'tools\ExtractGameIcon.ps1') -SourceExe $bridgeExe -DestinationIco $iconCopy
     $bytes = [IO.File]::ReadAllBytes($iconCopy)
     if ($bytes.Length -lt 6 -or [BitConverter]::ToUInt16($bytes, 4) -lt 2) { throw 'Published EXE lacks a multi-size icon.' }
-    if ((Get-ChildItem (Split-Path $bridgeExe -Parent) -File).Count -ne 1) { throw 'Release must contain only the single-file EXE.' }
+    $releaseFiles = Get-ChildItem (Split-Path $bridgeExe -Parent) -File
+    $releaseExecutables = @($releaseFiles | Where-Object Extension -eq '.exe')
+    $runtimeSidecars = @($releaseFiles | Where-Object Extension -in @('.dll', '.pdb', '.json', '.deps.json', '.runtimeconfig.json'))
+    if ($releaseExecutables.Count -ne 1 -or $releaseExecutables[0].Name -ne "$bridgeName.exe" -or $runtimeSidecars.Count -ne 0) { throw 'Release must contain one standalone bridge EXE without runtime sidecars.' }
 
-    Write-Host 'NTE bridge tests passed: discovery, Steam tail isolation, strict bridge options, exclusions, config overrides, logs, retention, single-file publish and icon.'
+    Write-Host 'NTE bridge tests passed: nested discovery, Steam tail isolation, ignored argument logging, exclusions, config overrides, logs, retention, single-file publish and icon.'
 } finally {
     if (Test-Path -LiteralPath $resolvedTest) { Remove-Item -LiteralPath $resolvedTest -Recurse -Force }
 }

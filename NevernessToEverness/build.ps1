@@ -31,7 +31,7 @@ if (-not $cmake) { throw 'CMake was not found. Install the Visual Studio CMake c
 $buildRoot = Join-Path $PSScriptRoot 'build\native-x64'
 & $cmake -S $PSScriptRoot -B $buildRoot -A x64 -DCMAKE_BUILD_TYPE=Release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $cmake --build $buildRoot --config Release --target NevernessToEvernessLaunchBridge NevernessToEvernessLaunchBridgeTestHost
+& $cmake --build $buildRoot --config Release --target NevernessToEvernessLaunchBridge NevernessToEvernessLaunchBridgeTestHost NevernessToEvernessRecoveryTests
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 [void](New-Item -ItemType Directory -Path $OutputDirectory -Force)

@@ -26,7 +26,7 @@ using namespace std::chrono_literals;
 
 namespace {
 constexpr wchar_t ProductName[] = L"NevernessToEvernessLaunchBridge";
-constexpr wchar_t Version[] = L"1.0.0";
+constexpr wchar_t Version[] = L"1.1.0";
 
 std::wstring Trim(std::wstring value) {
     const auto first = value.find_first_not_of(L" \t\r\n");
@@ -274,7 +274,62 @@ struct Options {
     bool validate = false;
     bool noDialog = false;
     bool steamCommandTailIgnored = false;
+    std::vector<std::wstring> ignoredArguments;
 };
+
+bool SensitiveArgumentName(std::wstring name) {
+    std::transform(name.begin(), name.end(), name.begin(), ::towlower);
+    static const std::vector<std::wstring> markers{
+        L"token", L"cookie", L"password", L"passwd", L"secret", L"authorization",
+        L"auth", L"session", L"ticket", L"api-key", L"apikey", L"credential"
+    };
+    return std::any_of(markers.begin(), markers.end(), [&](const std::wstring& marker) { return name.find(marker) != std::wstring::npos; });
+}
+
+std::wstring SanitizeIgnoredArgument(std::wstring argument, bool forceRedact = false) {
+    if (argument.empty()) return L"<empty>";
+    if (forceRedact) return L"<redacted>";
+    const size_t separator = argument.find_first_of(L"=:");
+    if (separator != std::wstring::npos) {
+        const std::wstring name = argument.substr(0, separator);
+        if (SensitiveArgumentName(name)) return name + argument.substr(separator, 1) + L"<redacted>";
+    }
+    std::wstring lower = argument;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
+    static const std::vector<std::wstring> assignments{
+        L"token=", L"cookie=", L"password=", L"passwd=", L"secret=", L"authorization=",
+        L"auth=", L"session=", L"ticket=", L"api-key=", L"apikey=", L"credential="
+    };
+    if (std::any_of(assignments.begin(), assignments.end(), [&](const std::wstring& marker) { return lower.find(marker) != std::wstring::npos; }))
+        return L"<redacted-argument>";
+    std::replace(argument.begin(), argument.end(), L'\r', L' ');
+    std::replace(argument.begin(), argument.end(), L'\n', L' ');
+    if (argument.size() > 512) argument = argument.substr(0, 512) + L"...";
+    return argument;
+}
+
+bool SensitiveSeparateValueOption(const std::wstring& argument) {
+    return !argument.empty() && argument[0] == L'-' && argument.find_first_of(L"=:") == std::wstring::npos && SensitiveArgumentName(argument);
+}
+
+void RecordIgnoredTail(Options& options, wchar_t** argv, int first, int count) {
+    bool redactNext = false;
+    for (int i = first; i < count; ++i) {
+        const std::wstring argument = argv[i];
+        options.ignoredArguments.push_back(SanitizeIgnoredArgument(argument, redactNext));
+        if (redactNext) redactNext = false;
+        else redactNext = SensitiveSeparateValueOption(argument);
+    }
+}
+
+std::wstring FormatIgnoredArguments(const Options& options) {
+    std::wostringstream output;
+    for (size_t i = 0; i < options.ignoredArguments.size(); ++i) {
+        if (i) output << L" | ";
+        output << options.ignoredArguments[i];
+    }
+    return output.str();
+}
 
 Options ParseOptions() {
     int count = 0;
@@ -286,18 +341,30 @@ Options ParseOptions() {
             const std::wstring argument = argv[i];
             if (argument == L"--") {
                 result.steamCommandTailIgnored = i + 1 < count;
+                RecordIgnoredTail(result, argv, i + 1, count);
                 break;
             }
-            if (argument == L"--install-root" && i + 1 < count) result.root = fs::path(argv[++i]);
-            else if (argument == L"--config" && i + 1 < count) result.config = fs::path(argv[++i]);
+            if (argument == L"--install-root") {
+                if (i + 1 >= count) throw BridgeError(3, "Missing value for --install-root");
+                result.root = fs::path(argv[++i]);
+            }
+            else if (argument == L"--config") {
+                if (i + 1 >= count) throw BridgeError(3, "Missing value for --config");
+                result.config = fs::path(argv[++i]);
+            }
             else if (argument == L"--validate") result.validate = true;
             else if (argument == L"--no-dialog") result.noDialog = true;
-            else if (argument.rfind(L"--", 0) == 0) throw BridgeError(3, "Unknown or incomplete command-line argument");
+            else if (argument.rfind(L"--", 0) == 0) {
+                result.ignoredArguments.push_back(SanitizeIgnoredArgument(argument));
+                if (SensitiveSeparateValueOption(argument) && i + 1 < count)
+                    result.ignoredArguments.push_back(SanitizeIgnoredArgument(argv[++i], true));
+            }
             else {
                 // Steam expands %command% after bridge-owned options. The first
                 // positional token is the original Steam command; ignore its
                 // entire tail so it cannot affect bridge discovery or launching.
                 result.steamCommandTailIgnored = true;
+                RecordIgnoredTail(result, argv, i, count);
                 break;
             }
         }
@@ -316,6 +383,14 @@ fs::path SafePath(const fs::path& root, const std::wstring& relative) {
 bool NonemptyFile(const fs::path& path) {
     std::error_code error;
     return fs::is_regular_file(path, error) && fs::file_size(path, error) > 0 && !error;
+}
+
+std::optional<fs::path> FindPreferredExecutable(const fs::path& root, const std::vector<std::wstring>& preferred) {
+    for (const auto& relative : preferred) {
+        const fs::path candidate = SafePath(root, relative);
+        if (NonemptyFile(candidate)) return fs::weakly_canonical(candidate);
+    }
+    return std::nullopt;
 }
 
 fs::path FindExecutable(const fs::path& root, const std::vector<std::wstring>& preferred, const std::wstring& fileName, const Configuration& config) {
@@ -358,11 +433,28 @@ Installation ResolveInstallation(const Options& options, const Configuration& co
         if (configured.is_relative()) configured = (config.source.empty() ? ExecutablePath().parent_path() : config.source.parent_path()) / configured;
         return resolve(configured);
     }
+
+    // A bridge copied anywhere below the installation root can locate the root
+    // cheaply by matching configured relative candidates while walking upward.
+    // This does not recursively scan broad parent directories or the whole drive.
     fs::path candidate = ExecutablePath().parent_path();
+    while (true) {
+        const fs::path normalized = fs::weakly_canonical(candidate);
+        const auto launcher = FindPreferredExecutable(normalized, config.launcherCandidates);
+        const auto game = FindPreferredExecutable(normalized, config.gameCandidates);
+        if (launcher && game)
+            return {normalized, *launcher, *game, SafePath(normalized, config.launcherLog)};
+        const fs::path parent = normalized.parent_path();
+        if (parent.empty() || parent == normalized) break;
+        candidate = parent;
+    }
+
+    candidate = ExecutablePath().parent_path();
     for (int i = 0; i < 5; ++i) {
         try { return resolve(candidate); } catch (const BridgeError&) {}
-        if (!candidate.has_parent_path()) break;
-        candidate = candidate.parent_path();
+        const fs::path parent = candidate.parent_path();
+        if (parent.empty() || parent == candidate) break;
+        candidate = parent;
     }
     throw BridgeError(3, "Unable to discover the NTE installation; use --install-root");
 }
@@ -504,6 +596,31 @@ WindowInfo WaitForWindow(const std::unordered_set<DWORD>& pids, int pollMs) {
     throw BridgeError(8, "Unable to find the official launcher window");
 }
 
+// Outlives the suppressor, so recovery cannot race with the hiding thread.
+class LauncherFailureRecovery {
+public:
+    LauncherFailureRecovery(DWORD pid, Logger& log) : pid_(pid), log_(log), exceptions_(std::uncaught_exceptions()) {}
+    ~LauncherFailureRecovery() noexcept {
+        if (std::uncaught_exceptions() <= exceptions_) return;
+        try {
+            std::unordered_set<DWORD> pids{pid_};
+            std::vector<WindowInfo> windows;
+            std::pair context{&pids, &windows};
+            EnumWindows(CollectWindows, reinterpret_cast<LPARAM>(&context));
+            for (const auto& window : windows) {
+                ShowWindowAsync(window.handle, SW_RESTORE);
+                ShowWindowAsync(window.handle, SW_SHOW);
+            }
+            log_.Info(L"launcher.failure_recovery", L"pid=" + std::to_wstring(pid_) +
+                L" restoreRequested=" + std::to_wstring(windows.size()) + L" suppressionStopped=true; launcher retained for manual update/retry");
+        } catch (...) {} // Preserve the original failure even if logging fails.
+    }
+private:
+    DWORD pid_;
+    Logger& log_;
+    int exceptions_;
+};
+
 class WindowSuppressor {
 public:
     WindowSuppressor(HWND window, bool enabled) : window_(window), enabled_(enabled) {
@@ -612,24 +729,85 @@ std::vector<DWORD> WaitForGame(const Installation& installation, const std::unor
 
 class InstanceLock {
 public:
-    explicit InstanceLock(const fs::path& root) {
+    explicit InstanceLock(const fs::path& root, Logger* log = nullptr) {
         std::hash<std::wstring> hash;
         const std::wstring name = L"Local\\NevernessToEvernessLaunchBridge-" + std::to_wstring(hash(fs::weakly_canonical(root).wstring()));
-        mutex_ = CreateMutexW(nullptr, TRUE, name.c_str());
-        acquired_ = mutex_ && GetLastError() != ERROR_ALREADY_EXISTS;
+        HANDLE gate = CreateMutexW(nullptr, FALSE, (name + L"-restart").c_str());
+        if (!gate) throw BridgeError(4, "Unable to restart the previous bridge instance");
+        const DWORD gateWait = WaitForSingleObject(gate, 10000);
+        if (gateWait != WAIT_OBJECT_0 && gateWait != WAIT_ABANDONED) {
+            CloseHandle(gate);
+            throw BridgeError(4, "Unable to restart the previous bridge instance");
+        }
+        try {
+            if (log) RestartOthers(root, *log);
+            mutex_ = CreateMutexW(nullptr, TRUE, name.c_str());
+            acquired_ = mutex_ && GetLastError() != ERROR_ALREADY_EXISTS;
+            if (mutex_ && !acquired_) {
+                const DWORD result = WaitForSingleObject(mutex_, 5000);
+                acquired_ = result == WAIT_OBJECT_0 || result == WAIT_ABANDONED;
+            }
+        } catch (...) { ReleaseMutex(gate); CloseHandle(gate); throw; }
+        ReleaseMutex(gate);
+        CloseHandle(gate);
     }
     ~InstanceLock() { if (mutex_) { if (acquired_) ReleaseMutex(mutex_); CloseHandle(mutex_); } }
     bool acquired() const { return acquired_; }
+    static bool IsBridge(const fs::path& path) {
+        DWORD ignored = 0;
+        const DWORD size = GetFileVersionInfoSizeW(path.c_str(), &ignored);
+        if (!size) return false;
+        std::vector<BYTE> data(size);
+        if (!GetFileVersionInfoW(path.c_str(), 0, size, data.data())) return false;
+        wchar_t* product = nullptr; UINT length = 0;
+        return VerQueryValueW(data.data(), L"\\StringFileInfo\\080404B0\\ProductName", reinterpret_cast<void**>(&product), &length)
+            && length && wcscmp(product, ProductName) == 0;
+    }
+    static void RestartOthers(const fs::path& root, Logger& log) {
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot == INVALID_HANDLE_VALUE) throw BridgeError(4, "Unable to restart the previous bridge instance");
+        std::vector<DWORD> candidates;
+        PROCESSENTRY32W entry{sizeof(entry)};
+        if (Process32FirstW(snapshot, &entry)) do {
+            if (entry.th32ProcessID != GetCurrentProcessId()) candidates.push_back(entry.th32ProcessID);
+        } while (Process32NextW(snapshot, &entry));
+        CloseHandle(snapshot);
+        for (DWORD pid : candidates) {
+            ProcessHandle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pid), pid);
+            if (!process.process) continue;
+            wchar_t buffer[32768]{}; DWORD length = 32768;
+            if (!QueryFullProcessImageNameW(process.process, 0, buffer, &length)) continue;
+            const auto path = fs::weakly_canonical(fs::path(buffer));
+            const auto relative = path.lexically_relative(fs::weakly_canonical(root));
+            const bool inside = !relative.empty() && *relative.begin() != L"..";
+            if (!inside || !IsBridge(path)) continue;
+            log.Info(L"bridge.restart_previous", L"pid=" + std::to_wstring(pid) + L" path=" + path.wstring());
+            if (!TerminateProcess(process.process, 0) || WaitForSingleObject(process.process, 5000) != WAIT_OBJECT_0)
+                throw BridgeError(4, "Unable to restart the previous bridge instance");
+        }
+    }
 private: HANDLE mutex_ = nullptr; bool acquired_ = false;
 };
 
 int Run(const Options& options, const Configuration& config, const Installation& installation, Logger& log) {
     const auto bridgeStarted = std::chrono::steady_clock::now();
-    InstanceLock lock(installation.root);
+    InstanceLock lock(installation.root, options.validate ? nullptr : &log);
     if (!lock.acquired()) throw BridgeError(4, "Another bridge instance is already running for this installation");
     log.Info(L"bridge.start", L"version=" + std::wstring(Version) + L" root=" + installation.root.wstring() + L" launcher=" + installation.launcher.wstring() + L" game=" + installation.game.wstring() + (options.validate ? L" validate=true" : L" validate=false") + (options.steamCommandTailIgnored ? L" steamCommandTailIgnored=true" : L" steamCommandTailIgnored=false"));
     if (options.validate) { log.Info(L"bridge.validate_success", L"paths, configuration, logging and native prerequisites validated"); return 0; }
-    if (!MatchingProcesses(L"HTGame.exe", installation.game).empty()) throw BridgeError(5, "The game is already running");
+    if (!MatchingProcesses(L"HTGame.exe", installation.game).empty()) {
+        log.Info(L"game.reattached", L"bridge restarted; tracking existing game path=" + installation.game.wstring());
+        std::optional<std::chrono::steady_clock::time_point> absent;
+        while (true) {
+            if (!MatchingProcesses(L"HTGame.exe", installation.game).empty()) absent.reset();
+            else if (!absent) absent = std::chrono::steady_clock::now();
+            if (absent && std::chrono::steady_clock::now() - *absent >= std::chrono::seconds(config.exitDebounce)) break;
+            Sleep(config.pollMs);
+        }
+        log.Info(L"bridge.complete", L"reattached game exited; exitCode=unavailable elapsedSeconds=" +
+            std::to_wstring(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - bridgeStarted).count()));
+        return 0;
+    }
 
     auto launcherIds = MatchingProcesses(L"NTEGame.exe", installation.launcher);
     ProcessHandle started;
@@ -644,7 +822,8 @@ int Run(const Options& options, const Configuration& config, const Installation&
         log.Info(L"launcher.attached", L"pid=" + std::to_wstring(expectedPid));
     }
 
-    std::unordered_set<DWORD> launcherSet(launcherIds.begin(), launcherIds.end());
+    LauncherFailureRecovery recovery(expectedPid, log);
+    std::unordered_set<DWORD> launcherSet{expectedPid};
     const WindowInfo window = WaitForWindow(launcherSet, config.pollMs);
     WindowSuppressor suppressor(window.handle, config.suppressWindow);
     log.Info(L"launcher.window", L"pid=" + std::to_wstring(window.pid) + L" class=" + window.className + L" client=" + std::to_wstring(window.width) + L"x" + std::to_wstring(window.height) +
@@ -703,6 +882,33 @@ int Run(const Options& options, const Configuration& config, const Installation&
         L" elapsedSeconds=" + std::to_wstring(elapsed) + L" debounceSeconds=" + std::to_wstring(config.exitDebounce));
     return 0;
 }
+std::wstring ChineseErrorHint(const std::string& message) {
+    if (message.find("Unable to restart the previous bridge instance") != std::string::npos)
+        return L"无法退出旧桥接器，请在任务管理器中结束旧桥接器后重试，并检查权限是否一致。";
+    if (message.find("Timed out waiting for the official resource check") != std::string::npos)
+        return L"等待官方资源检查超时，请检查是否已将游戏更新至最新版本。在官方启动器中完成更新后重试；若窗口未显示，可从系统托盘打开或退出后重开。";
+    if (message.find("Another bridge instance") != std::string::npos)
+        return L"此游戏已有桥接器正在运行，请等待启动完成或退出已有桥接器后重试，避免重复双击。";
+    if (message.find("already running") != std::string::npos)
+        return L"游戏已经运行，请切换到游戏窗口；重新启动前请先正常退出游戏。";
+    if (message.find("resource checks") != std::string::npos)
+        return L"等待资源检查时官方启动器已退出，请手动打开启动器检查更新及错误提示后重试。";
+    if (message.find("launcher window") != std::string::npos || message.find("mouse messages") != std::string::npos)
+        return L"无法找到或操作官方启动器窗口，请退出已有启动器后重试，并检查更新或弹窗。";
+    if (message.find("game process did not appear") != std::string::npos)
+        return L"已尝试开始游戏，但未检测到游戏进程，请在官方启动器中检查更新、登录或错误提示后重试。";
+    if (message.find("log directory") != std::string::npos || message.find("log file") != std::string::npos)
+        return L"日志写入失败，具体原因见上方英文信息。请检查所在目录的写入权限、磁盘空间及安全软件拦截。";
+    if (message.find("Configuration") != std::string::npos || message.find("Configured path") != std::string::npos || message.find("Missing value") != std::string::npos)
+        return L"配置或启动参数无效，请检查 INI 文件、参数值和路径范围。";
+    if (message.find("installation") != std::string::npos || message.find("executable was not found") != std::string::npos)
+        return L"未找到有效游戏安装，请将桥接器放在安装目录内，或用 --install-root 指定目录，并检查游戏文件完整性。";
+    if (message.find("CreateProcessW") != std::string::npos)
+        return L"无法启动官方启动器，请根据上方系统错误检查文件权限、安全软件拦截及游戏文件完整性。";
+    if (message.find("terminate") != std::string::npos)
+        return L"无法关闭本次启动的官方启动器，请从系统托盘正常退出后重试。";
+    return L"桥接器运行失败，请根据上方英文信息和日志排查，可先手动打开官方启动器检查更新和错误提示。";
+}
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
@@ -711,25 +917,27 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     try {
         options = ParseOptions();
         logger.emplace();
+        if (!options.ignoredArguments.empty())
+            logger->Info(L"arguments.ignored", L"count=" + std::to_wstring(options.ignoredArguments.size()) + L" values=" + FormatIgnoredArguments(options));
         const Configuration config = Configuration::Load(options.config);
         const Installation installation = ResolveInstallation(options, config);
         return Run(options, config, installation, *logger);
     } catch (const BridgeError& error) {
         const std::wstring summary = L"NTE bridge failed: " + Widen(error.what());
         try { if (logger) logger->Error(L"bridge.failure", summary + StackTrace()); } catch (...) {}
-        const std::wstring dialog = summary + (logger ? L"\n\nLog: " + logger->path().wstring() : L"");
+        const std::wstring dialog = summary + L"\n\n" + ChineseErrorHint(Utf8(summary)) + (logger ? L"\n\nLog: " + logger->path().wstring() : L"");
         if (!options.noDialog) MessageBoxW(nullptr, dialog.c_str(), ProductName, MB_OK | MB_ICONERROR);
         return error.code();
     } catch (const std::exception& error) {
         const std::wstring summary = L"NTE bridge failed: " + Widen(error.what());
         try { if (logger) logger->Error(L"bridge.failure", summary + StackTrace()); } catch (...) {}
-        const std::wstring dialog = summary + (logger ? L"\n\nLog: " + logger->path().wstring() : L"");
+        const std::wstring dialog = summary + L"\n\n" + ChineseErrorHint(Utf8(summary)) + (logger ? L"\n\nLog: " + logger->path().wstring() : L"");
         if (!options.noDialog) MessageBoxW(nullptr, dialog.c_str(), ProductName, MB_OK | MB_ICONERROR);
         return 20;
     } catch (...) {
         const std::wstring summary = L"NTE bridge failed: unknown native exception";
         try { if (logger) logger->Error(L"bridge.failure", summary + StackTrace()); } catch (...) {}
-        const std::wstring dialog = summary + (logger ? L"\n\nLog: " + logger->path().wstring() : L"");
+        const std::wstring dialog = summary + L"\n\n" + ChineseErrorHint(Utf8(summary)) + (logger ? L"\n\nLog: " + logger->path().wstring() : L"");
         if (!options.noDialog) MessageBoxW(nullptr, dialog.c_str(), ProductName, MB_OK | MB_ICONERROR);
         return 20;
     }
